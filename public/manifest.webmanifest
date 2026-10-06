@@ -1,0 +1,11 @@
+{
+  "name": "CosmoStock",
+  "short_name": "CosmoStock",
+  "description": "จัดการคลังง่าย สต็อกแม่น ธุรกิจเติบโต",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fcf9fb",
+  "theme_color": "#fcf9fb",
+  "lang": "th",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

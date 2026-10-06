@@ -1,0 +1,16 @@
+{
+  "name": "cosmostock",
+  "version": "1.0.0",
+  "description": "CosmoStock — ระบบจัดการคลังสินค้าเครื่องสำอาง",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "reset": "node --disable-warning=ExperimentalWarning server.js --reset"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

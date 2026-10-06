@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/industry-ac968ea4-010d-4eb5-baf1-f6a14a860d06/styles.css">
+<script src="_ds/industry-ac968ea4-010d-4eb5-baf1-f6a14a860d06/_ds_bundle.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wdth,wght@62.5..100,400..700&display=swap">
+<script src="icons.js"></script>
+<style>
+:root{--color-bg:#fcf9fb;--color-surface:#f7eff4;--color-text:#2b2230;--color-accent:#c4699a;--color-accent-2:#8f7bc8;--color-divider:color-mix(in srgb,#2b2230 14%,transparent);
+--color-neutral-100:#faf6f9;--color-neutral-200:#efe8ed;--color-neutral-300:#ddd4da;--color-neutral-400:#c0b6bd;--color-neutral-500:#9f959c;--color-neutral-600:#80767d;--color-neutral-700:#62585f;--color-neutral-800:#463e44;--color-neutral-900:#2e282d;
+--color-accent-100:#fdf0f6;--color-accent-200:#fadbe9;--color-accent-300:#f3bcd6;--color-accent-400:#e59bbf;--color-accent-500:#d27ba7;--color-accent-600:#b8608d;--color-accent-700:#964a72;--color-accent-800:#6f3554;--color-accent-900:#4a2338;
+--color-accent-2-100:#f4f1fd;--color-accent-2-200:#e6e0fa;--color-accent-2-300:#cfc4f2;--color-accent-2-400:#b3a3e6;--color-accent-2-500:#9783d4;--color-accent-2-600:#7c68ba;--color-accent-2-700:#615097;--color-accent-2-800:#463a6e;--color-accent-2-900:#2e2648;
+--font-heading:"Barlow Condensed","Noto Sans Thai",system-ui,sans-serif;--font-body:"Barlow","Noto Sans Thai",system-ui,sans-serif}
+body{margin:0;background:#efe9ee}
+h1,h2,h3,h4,.card-title,.btn,.nav-brand{font-stretch:80%}
+a{color:var(--color-accent-700)}a:hover{color:var(--color-accent-800)}
+.dv-turn{padding:40px 44px 32px;scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 8px}.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#2b2230;color:#fff;text-decoration:none}.dv-tname{font:600 13px/1.2 system-ui,sans-serif;color:#2b2230}.dv-opts{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#2b2230;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 12px/1.3 system-ui,sans-serif;color:rgba(0,0,0,.6)}.dv-card{max-width:100%;background:var(--color-bg);border:1px solid rgba(0,0,0,.1);box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}.dv-opt:target .dv-oid{background:var(--color-accent);color:#fff}.dv-next{margin:28px 0 0;font:12px/1.5 system-ui,sans-serif;color:rgba(0,0,0,.55)}
+</style>
+</helmet>
+<section class="dv-turn" id="t2" style="border-bottom:1px solid rgba(0,0,0,.08)">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">หน้าที่เหลือ — แจ้งเตือน · เพิ่ม/แก้ไขสินค้า · ประวัติ · จัดการสินค้า (ลบ) · ผู้ใช้/สิทธิ์ · รายงาน · Login เดสก์ท็อป</span></div>
+<p style="margin:0 0 28px;max-width:760px;font:13px/1.6 system-ui,sans-serif;color:rgba(0,0,0,.6);text-wrap:pretty">ใช้ภาษาภาพและโครงเมนูเดียวกับ <a class="dv-oid" href="#1b">1b</a> และ <a class="dv-oid" href="#1g">1g</a> หน้าที่เป็นตารางกว้างบนเดสก์ท็อป บนมือถือจะแสดงเป็นรายการการ์ดแทน (แบบ <a class="dv-oid" href="#2c">2c</a>) เพื่อไม่ให้ล้นจอ</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>มือถือ · แจ้งเตือนสินค้าใกล้หมด / ใกล้หมดอายุ</div>
+<div class="dv-card" style="width:390px;height:844px;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--color-divider)">
+<button class="btn btn-ghost" style="width:44px;height:44px;padding:0;color:var(--color-text)"><cs-i name="left" size="22"></cs-i></button>
+<h4 style="margin:0;flex:1">แจ้งเตือน</h4>
+<button class="btn btn-ghost" style="min-height:44px;font-size:13px">ตั้งค่า</button></div>
+<div style="flex:1;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:14px">
+<div class="seg" style="display:grid;grid-template-columns:1fr 1fr">
+<label class="seg-opt" style="justify-content:center;min-height:44px"><input type="radio" name="al" checked>สต็อกใกล้หมด (3)</label>
+<label class="seg-opt" style="justify-content:center;min-height:44px"><input type="radio" name="al">ใกล้หมดอายุ (2)</label>
+</div>
+<sc-for list="{{ alerts }}" as="a" hint-placeholder-count="3">
+<div class="card blueprint" style="padding:14px;gap:10px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="display:flex;align-items:center;gap:10px"><span style="color:{{ a.color }}"><cs-i name="{{ a.icon }}" size="20"></cs-i></span><div style="flex:1;min-width:0"><div class="card-kicker" style="color:var(--color-accent-700)">{{ a.kind }}</div><div class="card-title" style="font-size:16px">{{ a.name }}</div></div><span style="font-size:12px;color:var(--color-neutral-700)">{{ a.sku }}</span></div>
+<div style="height:6px;background:var(--color-accent-100)"><div style="height:100%;width:{{ a.w }};background:var(--color-accent-500)"></div></div>
+<div style="display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:13px;color:var(--color-neutral-700)">{{ a.note }}</span><button class="btn btn-secondary" style="min-height:44px"><cs-i name="in"></cs-i>รับเข้า</button></div>
+</div>
+</sc-for>
+<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-2-700);margin-top:4px">ใกล้หมดอายุ · ภายใน 60 วัน</div>
+<sc-for list="{{ expiring }}" as="e" hint-placeholder-count="2">
+<div style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--color-divider)"><span style="color:var(--color-accent-2-600)"><cs-i name="clock" size="20"></cs-i></span><div style="flex:1;min-width:0"><div style="font-size:14px">{{ e.name }}</div><div style="font-size:12px;color:var(--color-neutral-700)">{{ e.lot }} · หมดอายุ {{ e.date }}</div></div><span class="tag tag-accent-2">{{ e.days }}</span></div>
+</sc-for>
+</div>
+</div></div>
+
+<div class="dv-opt" id="2b"><div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>มือถือ · เพิ่ม / แก้ไขสินค้า</div>
+<div class="dv-card" style="width:390px;height:844px;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--color-divider)">
+<button class="btn btn-ghost" style="width:44px;height:44px;padding:0;color:var(--color-text)"><cs-i name="left" size="22"></cs-i></button>
+<h4 style="margin:0;flex:1">เพิ่มสินค้าใหม่</h4></div>
+<div style="flex:1;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;gap:12px;align-items:center">
+<div class="blueprint" style="width:84px;height:84px;flex:none;display:grid;place-items:center;color:var(--color-neutral-600);background:repeating-linear-gradient(135deg,var(--color-accent-100) 0 6px,var(--color-bg) 6px 12px)"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><cs-i name="image" size="26"></cs-i></div>
+<div style="font-size:13px;color:var(--color-neutral-700)">รูปสินค้า (ไม่บังคับ)<br><button class="btn btn-secondary" style="min-height:44px;margin-top:6px">อัปโหลดรูป</button></div></div>
+<div class="field"><label>ชื่อสินค้า *</label><input class="input" style="min-height:46px;font-size:16px" placeholder="เช่น ลิปสติก Velvet Rose"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<div class="field"><label>SKU *</label><input class="input" style="min-height:46px;font-size:16px" value="MU-LP04"></div>
+<div class="field"><label>หมวดหมู่</label><button class="btn btn-secondary" style="width:100%;min-height:46px;justify-content:space-between;font-family:var(--font-body);font-weight:400;font-size:16px">เมคอัพ<cs-i name="down" size="16"></cs-i></button></div></div>
+<div class="field"><label>บาร์โค้ด</label><div style="display:flex;gap:8px"><input class="input" style="min-height:46px;font-size:16px;flex:1;min-width:0" placeholder="สแกนหรือพิมพ์"><button class="btn btn-secondary" style="width:46px;height:46px;padding:0"><cs-i name="scan" size="20"></cs-i></button></div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<div class="field"><label>ราคาทุน (฿)</label><input class="input" style="min-height:46px;font-size:16px" inputmode="decimal" placeholder="0.00"></div>
+<div class="field"><label>ราคาขาย (฿)</label><input class="input" style="min-height:46px;font-size:16px" inputmode="decimal" placeholder="0.00"></div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<div class="field"><label>หน่วย</label><input class="input" style="min-height:46px;font-size:16px" value="ชิ้น"></div>
+<div class="field"><label>จุดสั่งซื้อ (แจ้งเตือนเมื่อต่ำกว่า)</label><input class="input" style="min-height:46px;font-size:16px" value="10"></div></div>
+<label class="radio" style="min-height:44px"><input type="checkbox" checked><span class="dot"></span>ติดตามล็อตและวันหมดอายุ</label>
+</div>
+<div style="padding:12px 16px 26px;border-top:1px solid var(--color-divider);display:grid;grid-template-columns:1fr 2fr;gap:10px">
+<button class="btn btn-secondary" style="min-height:50px;font-size:16px">ยกเลิก</button>
+<button class="btn btn-primary blueprint" style="min-height:50px;font-size:17px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>บันทึกสินค้า</button></div>
+</div></div>
+
+<div class="dv-opt" id="2c"><div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>มือถือ · ประวัติการเคลื่อนไหว</div>
+<div class="dv-card" style="width:390px;height:844px;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--color-divider)">
+<button class="btn btn-ghost" style="width:44px;height:44px;padding:0;color:var(--color-text)"><cs-i name="left" size="22"></cs-i></button>
+<h4 style="margin:0;flex:1">ประวัติการเคลื่อนไหว</h4>
+<button class="btn btn-ghost" style="width:44px;height:44px;padding:0;color:var(--color-text)"><cs-i name="download" size="20"></cs-i></button></div>
+<div style="padding:12px 16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--color-divider)">
+<div style="position:relative"><span style="position:absolute;left:12px;top:14px;color:var(--color-neutral-600)"><cs-i name="search"></cs-i></span><input class="input" style="min-height:46px;padding-left:38px;font-size:16px" placeholder="ค้นหาสินค้า / เลขที่เอกสาร"></div>
+<div style="display:flex;gap:6px;overflow-x:auto;margin:0 -16px;padding:0 16px">
+<span class="tag" style="flex:none;padding:8px 14px;background:var(--color-accent);color:#fff">ทั้งหมด</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider)">รับเข้า</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider)">จ่ายออก</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider)">ปรับยอด</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider);display:flex;gap:4px"><cs-i name="calendar" size="14"></cs-i>30 วัน</span>
+</div></div>
+<div style="flex:1;overflow:hidden;padding:0 16px">
+<sc-for list="{{ history }}" as="h" hint-placeholder-count="7">
+<div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--color-divider)"><span style="width:36px;height:36px;flex:none;display:grid;place-items:center;background:{{ h.bg }};color:{{ h.fg }}"><cs-i name="{{ h.icon }}"></cs-i></span><div style="flex:1;min-width:0"><div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ h.name }}</div><div style="font-size:12px;color:var(--color-neutral-700)">{{ h.date }} · {{ h.by }} · {{ h.doc }}</div></div><div style="text-align:right;flex:none"><div style="font-weight:600;color:{{ h.fg }}">{{ h.qty }}</div><div style="font-size:11px;color:var(--color-neutral-700)">{{ h.bal }}</div></div></div>
+</sc-for>
+</div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--color-divider);background:var(--color-bg);padding-bottom:14px">
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="grid" size="22"></cs-i>หน้าแรก</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="package" size="22"></cs-i>สินค้า</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="in" size="22"></cs-i>รับเข้า</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="out" size="22"></cs-i>จ่ายออก</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-accent-700);box-shadow:inset 0 2px 0 var(--color-accent)"><cs-i name="menu" size="22"></cs-i>เพิ่มเติม</a>
+</div>
+</div></div>
+
+<div class="dv-opt" id="2d"><div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a>เดสก์ท็อป · จัดการสินค้า + ยืนยันการลบ</div>
+<div class="dv-card" style="width:1440px;height:900px;display:grid;grid-template-columns:248px 1fr;position:relative">
+<div style="border-right:1px solid var(--color-divider);padding:18px 14px;display:flex;flex-direction:column;gap:16px">
+<div style="display:flex;align-items:center;gap:10px;padding:0 6px"><div style="width:36px;height:36px;display:grid;place-items:center;background:var(--color-accent);color:#fff"><cs-i name="package" size="20"></cs-i></div><div style="font:600 21px/1 var(--font-heading)">CosmoStock</div></div>
+<nav style="display:flex;flex-direction:column;gap:2px">
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="grid"></cs-i>Dashboard</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-accent-800);background:var(--color-accent-100);box-shadow:inset 2px 0 0 var(--color-accent)"><cs-i name="package"></cs-i>สินค้า</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="in"></cs-i>รับสินค้าเข้า</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="out"></cs-i>จ่าย/เบิกสินค้า</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="adjust"></cs-i>ปรับยอดสต็อก</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="history"></cs-i>ประวัติการเคลื่อนไหว</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="bell"></cs-i>แจ้งเตือน</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="chart"></cs-i>รายงาน</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="users"></cs-i>ผู้ใช้และสิทธิ์</a>
+</nav></div>
+<div style="padding:22px 30px;display:flex;flex-direction:column;gap:16px;min-width:0">
+<div style="display:flex;align-items:center;gap:12px"><h2 style="margin:0;flex:1">สินค้า <span style="font-size:18px;color:var(--color-neutral-700)">10 รายการ</span></h2>
+<button class="btn btn-secondary" style="min-height:40px"><cs-i name="download"></cs-i>ส่งออก CSV</button>
+<button class="btn btn-primary blueprint" style="min-height:40px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><cs-i name="plus"></cs-i>เพิ่มสินค้า</button></div>
+<div style="display:flex;gap:10px"><div style="position:relative;width:360px"><span style="position:absolute;left:12px;top:10px;color:var(--color-neutral-600)"><cs-i name="search"></cs-i></span><input class="input" style="padding-left:38px;min-height:40px" placeholder="ค้นหาชื่อ, SKU, บาร์โค้ด"></div>
+<button class="btn btn-secondary" style="min-height:40px">หมวดหมู่: ทั้งหมด<cs-i name="down" size="16"></cs-i></button>
+<button class="btn btn-secondary" style="min-height:40px">สถานะ: ทั้งหมด<cs-i name="down" size="16"></cs-i></button></div>
+<table class="table"><thead><tr><th>สินค้า</th><th>SKU</th><th>หมวดหมู่</th><th style="text-align:right">คงเหลือ</th><th>สถานะ</th><th style="text-align:right">จัดการ</th></tr></thead><tbody>
+<sc-for list="{{ products }}" as="p" hint-placeholder-count="8"><tr><td><div style="display:flex;align-items:center;gap:10px"><div style="width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--color-divider);background:repeating-linear-gradient(135deg,var(--color-accent-100) 0 5px,var(--color-bg) 5px 10px);font:600 11px var(--font-heading);color:var(--color-accent-700)">{{ p.ab }}</div>{{ p.name }}</div></td><td>{{ p.sku }}</td><td>{{ p.cat }}</td><td style="text-align:right;font-weight:600">{{ p.qty }}</td><td><span class="tag" style="background:{{ p.tagBg }};color:{{ p.tagFg }}">{{ p.status }}</span></td><td style="text-align:right"><button class="btn btn-ghost" style="width:36px;height:36px;padding:0;color:var(--color-neutral-700)"><cs-i name="edit"></cs-i></button><button class="btn btn-ghost" style="width:36px;height:36px;padding:0;color:var(--color-neutral-700)"><cs-i name="trash"></cs-i></button></td></tr></sc-for>
+</tbody></table>
+</div>
+<div class="dialog-backdrop" style="position:absolute"><div class="dialog blueprint" style="background:var(--color-bg)"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div class="dialog-title">ลบสินค้า "รองพื้น Soft Matte"?</div>
+<div class="dialog-body">สินค้าจะถูกซ่อนจากรายการและการค้นหา ประวัติการเคลื่อนไหวเดิมยังเก็บไว้เพื่อใช้ในรายงาน</div>
+<div class="field"><label>พิมพ์ SKU "MU-FD02" เพื่อยืนยัน</label><input class="input" value="MU-FD02"></div>
+<div class="dialog-actions"><button class="btn btn-secondary" style="min-height:40px">ยกเลิก</button><button class="btn btn-primary" style="min-height:40px;background:var(--color-accent-700);border-color:var(--color-accent-700)"><cs-i name="trash"></cs-i>ลบสินค้า</button></div>
+</div></div>
+</div></div>
+
+<div class="dv-opt" id="2e"><div class="dv-olabel"><a class="dv-oid" href="#2e">2e</a>เดสก์ท็อป · ผู้ใช้และสิทธิ์</div>
+<div class="dv-card" style="width:1440px;height:900px;padding:26px 32px;display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:center;gap:12px"><div style="flex:1"><h2 style="margin:0">ผู้ใช้และสิทธิ์</h2><div style="font-size:13px;color:var(--color-neutral-700)">Rose Beauty · สาขาสยาม — ผู้ใช้เห็นเฉพาะข้อมูลของร้านที่ได้รับเชิญ</div></div>
+<button class="btn btn-primary blueprint" style="min-height:40px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><cs-i name="plus"></cs-i>เชิญผู้ใช้</button></div>
+<div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px;align-items:start">
+<div class="card blueprint" style="padding:16px 18px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div class="card-title">สมาชิกในร้าน (4)</div>
+<table class="table"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>สถานะ</th><th>เข้าใช้ล่าสุด</th><th></th></tr></thead><tbody>
+<sc-for list="{{ users }}" as="u" hint-placeholder-count="4"><tr><td><div style="display:flex;align-items:center;gap:10px"><div style="width:34px;height:34px;border-radius:50%;background:var(--color-accent-2-200);color:var(--color-accent-2-800);display:grid;place-items:center;font-weight:600">{{ u.ini }}</div><div><div>{{ u.name }}</div><div style="font-size:12px;color:var(--color-neutral-700)">{{ u.email }}</div></div></div></td><td><button class="btn btn-secondary" style="min-height:34px;font-family:var(--font-body);font-weight:400">{{ u.role }}<cs-i name="down" size="14"></cs-i></button></td><td><span class="tag tag-neutral">{{ u.status }}</span></td><td>{{ u.last }}</td><td style="text-align:right"><button class="btn btn-ghost" style="width:36px;height:36px;padding:0;color:var(--color-neutral-700)"><cs-i name="trash"></cs-i></button></td></tr></sc-for>
+</tbody></table></div>
+<div class="card blueprint" style="padding:16px 18px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div class="card-title">สิทธิ์ตามบทบาท</div>
+<table class="table" style="font-size:13px"><thead><tr><th>การใช้งาน</th><sc-for list="{{ roles }}" as="r" hint-placeholder-count="4"><th style="text-align:center">{{ r }}</th></sc-for></tr></thead><tbody>
+<sc-for list="{{ perms }}" as="pm" hint-placeholder-count="8"><tr><td>{{ pm.name }}</td><sc-for list="{{ pm.cells }}" as="c" hint-placeholder-count="4"><td style="text-align:center;color:{{ c.color }}"><cs-i name="{{ c.icon }}"></cs-i></td></sc-for></tr></sc-for>
+</tbody></table></div>
+</div>
+</div></div>
+
+<div class="dv-opt" id="2f"><div class="dv-olabel"><a class="dv-oid" href="#2f">2f</a>เดสก์ท็อป · รายงาน</div>
+<div class="dv-card" style="width:1440px;height:900px;padding:26px 32px;display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:center;gap:12px"><h2 style="margin:0;flex:1">รายงาน</h2>
+<button class="btn btn-secondary" style="min-height:40px"><cs-i name="calendar"></cs-i>1 ก.ย. – 6 ต.ค. 2569</button>
+<button class="btn btn-secondary" style="min-height:40px"><cs-i name="file"></cs-i>PDF</button>
+<button class="btn btn-primary blueprint" style="min-height:40px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><cs-i name="download"></cs-i>ส่งออก Excel</button></div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+<button class="btn" style="min-height:64px;justify-content:flex-start;gap:10px;padding:0 16px;font-size:16px;background:var(--color-accent-100);border-color:var(--color-accent-400);color:var(--color-accent-800)"><cs-i name="package" size="20"></cs-i>สต็อกคงเหลือ</button>
+<button class="btn btn-secondary" style="min-height:64px;justify-content:flex-start;gap:10px;padding:0 16px;font-size:16px"><cs-i name="history" size="20"></cs-i>เคลื่อนไหวตามช่วงเวลา</button>
+<button class="btn btn-secondary" style="min-height:64px;justify-content:flex-start;gap:10px;padding:0 16px;font-size:16px"><cs-i name="clock" size="20"></cs-i>สินค้าใกล้หมดอายุ</button>
+<button class="btn btn-secondary" style="min-height:64px;justify-content:flex-start;gap:10px;padding:0 16px;font-size:16px"><cs-i name="chart" size="20"></cs-i>มูลค่าคลังตามหมวด</button></div>
+<div class="blueprint" style="display:grid;grid-template-columns:repeat(4,1fr)"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="padding:14px 16px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">รับเข้าทั้งช่วง</div><div style="font:600 32px/1.1 var(--font-heading)">485 <span style="font-size:16px">ชิ้น</span></div></div>
+<div style="padding:14px 16px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">จ่ายออกทั้งช่วง</div><div style="font:600 32px/1.1 var(--font-heading)">403 <span style="font-size:16px">ชิ้น</span></div></div>
+<div style="padding:14px 16px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">ปรับยอดสุทธิ</div><div style="font:600 32px/1.1 var(--font-heading)">+3 <span style="font-size:16px">ชิ้น</span></div></div>
+<div style="padding:14px 16px"><div style="font-size:12px;color:var(--color-neutral-700)">มูลค่าคลัง ณ วันสิ้นงวด</div><div style="font:600 32px/1.1 var(--font-heading)">฿122,265</div></div></div>
+<div class="card blueprint" style="padding:16px 18px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div class="card-title">สต็อกคงเหลือตามหมวดหมู่</div>
+<table class="table"><thead><tr><th>หมวดหมู่</th><th style="text-align:right">จำนวน SKU</th><th style="text-align:right">รับเข้า</th><th style="text-align:right">จ่ายออก</th><th style="text-align:right">มูลค่าคงเหลือ</th></tr></thead><tbody>
+<sc-for list="{{ report }}" as="r" hint-placeholder-count="5"><tr><td>{{ r.cat }}</td><td style="text-align:right">{{ r.sku }}</td><td style="text-align:right">{{ r.rin }}</td><td style="text-align:right">{{ r.rout }}</td><td style="text-align:right;font-weight:600">{{ r.val }}</td></tr></sc-for>
+<tr><td style="font-weight:600">รวม</td><td style="text-align:right;font-weight:600">10</td><td style="text-align:right;font-weight:600">485</td><td style="text-align:right;font-weight:600">403</td><td style="text-align:right;font-weight:600">฿122,265</td></tr>
+</tbody></table></div>
+</div></div>
+
+<div class="dv-opt" id="2g"><div class="dv-olabel"><a class="dv-oid" href="#2g">2g</a>เดสก์ท็อป · เข้าสู่ระบบ / สมัครร้าน</div>
+<div class="dv-card" style="width:1440px;height:900px;display:grid;grid-template-columns:1fr 1fr">
+<div style="background:var(--color-accent-900);color:var(--color-bg);padding:56px 64px;display:flex;flex-direction:column;justify-content:space-between">
+<div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;display:grid;place-items:center;background:var(--color-accent);color:#fff"><cs-i name="package" size="24"></cs-i></div><span style="font:600 26px var(--font-heading)">CosmoStock</span></div>
+<div><h1 style="font-size:72px;margin:0;line-height:1">จัดการคลังง่าย<br>สต็อกแม่น<br>ธุรกิจเติบโต</h1>
+<p style="margin:20px 0 0;font-size:17px;max-width:440px;color:var(--color-accent-200)">ระบบจัดการคลังสินค้าเครื่องสำอาง ใช้ได้ทั้งมือถือ แท็บเล็ต และคอมพิวเตอร์</p></div>
+<div style="font-size:13px;color:var(--color-accent-300)">© 2569 CosmoStock</div></div>
+<div style="display:grid;place-items:center;padding:40px">
+<div class="card blueprint" style="width:420px;padding:28px;gap:16px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div class="seg" style="display:grid;grid-template-columns:1fr 1fr"><label class="seg-opt" style="justify-content:center;min-height:44px"><input type="radio" name="lg" checked>เข้าสู่ระบบ</label><label class="seg-opt" style="justify-content:center;min-height:44px"><input type="radio" name="lg">สมัครร้านใหม่</label></div>
+<div class="field"><label>อีเมล</label><input class="input" style="min-height:44px" value="mintra@rosebeauty.co"></div>
+<div class="field"><label>รหัสผ่าน</label><input class="input" type="password" style="min-height:44px" value="password123"></div>
+<div style="display:flex;justify-content:space-between;align-items:center;font-size:14px"><label class="radio"><input type="checkbox" checked><span class="dot"></span>จดจำฉัน</label><a href="#">ลืมรหัสผ่าน?</a></div>
+<button class="btn btn-primary blueprint" style="min-height:48px;font-size:17px;width:100%"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>เข้าสู่ระบบ</button>
+<div style="font-size:13px;color:var(--color-neutral-700)">หลังเข้าสู่ระบบ ถ้าบัญชีอยู่หลายร้าน ระบบจะให้เลือกร้านก่อนเข้า Dashboard</div>
+</div></div>
+</div></div>
+
+</div>
+<p class="dv-next">ต่อได้เลย: "ทำเป็นต้นแบบกดได้จริง" · "เพิ่มหน้าเลือกร้านหลัง Login" · "ทำ <a class="dv-oid" href="#2e">2e</a> เวอร์ชันมือถือ"</p>
+</section>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">CosmoStock — ชุดหน้าจอหลัก (มือถือ · แท็บเล็ต · เดสก์ท็อป)</span></div>
+<p style="margin:0 0 28px;max-width:760px;font:13px/1.6 system-ui,sans-serif;color:rgba(0,0,0,.6);text-wrap:pretty">โครงแบบ wireframe ของระบบ Industry (เส้นบาง มุมเหลี่ยม เครื่องหมาย + ที่มุม) ปรับสีเป็นชมพูพาสเทล/ลาเวนเดอร์/ขาวตามแบรนด์ มือถือใช้แถบเมนูล่าง 5 ปุ่ม (ปุ่มสูง ≥ 44px), แท็บเล็ตใช้แถบไอคอนซ้าย + มุมมองแบ่งสองฝั่ง, เดสก์ท็อปใช้ sidebar เต็ม ข้อมูลทั้งหมดผูกกับร้านที่เลือกอยู่ (สลับร้านได้จากหัวเมนู)</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>มือถือ · เข้าสู่ระบบ</div>
+<div class="dv-card" style="width:390px;height:844px;display:flex;flex-direction:column;padding:56px 24px 28px;gap:32px">
+<div style="display:flex;flex-direction:column;gap:14px">
+<div style="width:48px;height:48px;display:grid;place-items:center;background:var(--color-accent);color:#fff"><cs-i name="package" size="26"></cs-i></div>
+<div><h1 style="margin:0;font-size:44px;letter-spacing:-0.01em">CosmoStock</h1>
+<p style="margin:4px 0 0;font-size:16px;color:var(--color-accent-700)">จัดการคลังง่าย สต็อกแม่น ธุรกิจเติบโต</p></div>
+</div>
+<div class="card blueprint" style="padding:22px 18px;gap:16px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div class="card-kicker">เข้าสู่ระบบ</div>
+<div class="field"><label>อีเมล</label><input class="input" style="min-height:48px;font-size:16px" value="mintra@rosebeauty.co"></div>
+<div class="field"><label>รหัสผ่าน</label>
+<div style="position:relative"><input class="input" type="password" style="min-height:48px;font-size:16px;padding-right:48px" value="password123"><button class="btn btn-ghost" style="position:absolute;right:2px;top:2px;width:44px;height:44px;padding:0"><cs-i name="eye"></cs-i></button></div></div>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:14px">
+<label class="radio" style="min-height:44px"><input type="checkbox" checked><span class="dot"></span>จดจำฉัน</label>
+<a href="#" style="padding:12px 0">ลืมรหัสผ่าน?</a></div>
+<button class="btn btn-primary blueprint" style="min-height:50px;font-size:17px;width:100%"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>เข้าสู่ระบบ</button>
+</div>
+<div style="margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:14px;color:var(--color-neutral-700)">
+<span>ยังไม่มีร้านในระบบ? <a href="#">สมัครร้านใหม่</a></span>
+<span style="font-size:12px">v1.0 · โปรเจกต์ระบบจัดการคลังสินค้าเครื่องสำอาง</span></div>
+</div></div>
+
+<div class="dv-opt" id="1b"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>มือถือ · Dashboard</div>
+<div class="dv-card" style="width:390px;height:844px;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:8px;padding:10px 12px 10px 16px;border-bottom:1px solid var(--color-divider)">
+<div style="width:32px;height:32px;display:grid;place-items:center;background:var(--color-accent);color:#fff"><cs-i name="package"></cs-i></div>
+<button class="btn" style="border:0;padding:4px 6px;flex-direction:column;align-items:flex-start;gap:0;margin-right:auto"><span style="font-size:17px">CosmoStock</span><span style="display:flex;align-items:center;gap:2px;font-family:var(--font-body);font-weight:400;font-size:12px;color:var(--color-neutral-700)">Rose Beauty · สยาม<cs-i name="down" size="14"></cs-i></span></button>
+<button class="btn btn-ghost" style="width:44px;height:44px;padding:0;position:relative;color:var(--color-text)"><cs-i name="bell" size="20"></cs-i><span style="position:absolute;top:6px;right:6px;min-width:16px;height:16px;padding:0 4px;background:var(--color-accent);color:#fff;font:600 10px/16px var(--font-body);border-radius:8px">5</span></button>
+<div style="width:36px;height:36px;border-radius:50%;background:var(--color-accent-2-200);color:var(--color-accent-2-800);display:grid;place-items:center;font-weight:600;font-size:14px">ม</div>
+</div>
+<div style="flex:1;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:18px">
+<div><h3 style="margin:0">ภาพรวมคลังสินค้า</h3><span style="font-size:13px;color:var(--color-neutral-700)">อังคาร 6 ต.ค. 2569 · อัปเดต 14:30</span></div>
+<div class="blueprint" style="display:grid;grid-template-columns:1fr 1fr"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="padding:12px 14px;border-right:1px solid var(--color-divider);border-bottom:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">สินค้าทั้งหมด</div><div style="font:600 26px/1.1 var(--font-heading)">10 <span style="font-size:15px">SKU</span></div></div>
+<div style="padding:12px 14px;border-bottom:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">คงเหลือรวม</div><div style="font:600 26px/1.1 var(--font-heading)">517 <span style="font-size:15px">ชิ้น</span></div></div>
+<div style="padding:12px 14px;border-right:1px solid var(--color-divider);border-bottom:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">มูลค่าคลัง</div><div style="font:600 26px/1.1 var(--font-heading)">฿122,265</div></div>
+<div style="padding:12px 14px;border-bottom:1px solid var(--color-divider);background:var(--color-accent-100)"><div style="font-size:12px;color:var(--color-accent-800)">ใกล้หมด</div><div style="font:600 26px/1.1 var(--font-heading);color:var(--color-accent-700)">2</div></div>
+<div style="padding:12px 14px;border-right:1px solid var(--color-divider);background:var(--color-accent-100)"><div style="font-size:12px;color:var(--color-accent-800)">หมดสต็อก</div><div style="font:600 26px/1.1 var(--font-heading);color:var(--color-accent-700)">1</div></div>
+<div style="padding:12px 14px;background:var(--color-accent-2-100)"><div style="font-size:12px;color:var(--color-accent-2-800)">ใกล้หมดอายุ</div><div style="font:600 26px/1.1 var(--font-heading);color:var(--color-accent-2-700)">2</div></div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+<button class="btn btn-secondary" style="flex-direction:column;min-height:64px;gap:4px;font-size:13px"><cs-i name="in" size="20"></cs-i>รับเข้า</button>
+<button class="btn btn-secondary" style="flex-direction:column;min-height:64px;gap:4px;font-size:13px"><cs-i name="out" size="20"></cs-i>จ่ายออก</button>
+<button class="btn btn-secondary" style="flex-direction:column;min-height:64px;gap:4px;font-size:13px"><cs-i name="adjust" size="20"></cs-i>ปรับยอด</button>
+<button class="btn btn-primary" style="flex-direction:column;min-height:64px;gap:4px;font-size:13px"><cs-i name="scan" size="20"></cs-i>สแกน</button>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;justify-content:space-between;align-items:center"><h4 style="margin:0">แจ้งเตือนสำคัญ</h4><a href="#" style="font-size:13px;padding:10px 0">ดูทั้งหมด</a></div>
+<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--color-accent-300);background:var(--color-accent-100)"><cs-i name="alert" style="color:var(--color-accent-700)"></cs-i><div style="flex:1;font-size:14px"><b style="font-weight:600">หมดสต็อก</b> · รองพื้น Soft Matte</div><span class="tag" style="background:var(--color-accent-700);color:#fff">0</span></div>
+<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--color-divider)"><cs-i name="package" style="color:var(--color-accent-600)"></cs-i><div style="flex:1;font-size:14px"><b style="font-weight:600">สต็อกต่ำ</b> · บลัชออน Peach Glow</div><span class="tag tag-accent">8</span></div>
+<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--color-divider)"><cs-i name="clock" style="color:var(--color-accent-2-600)"></cs-i><div style="flex:1;font-size:14px"><b style="font-weight:600">ใกล้หมดอายุ</b> · เซรั่มวิตามินซี</div><span class="tag tag-accent-2">37 วัน</span></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:2px">
+<div style="display:flex;justify-content:space-between;align-items:center"><h4 style="margin:0">รายการล่าสุด</h4><a href="#" style="font-size:13px;padding:10px 0">ประวัติ</a></div>
+<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--color-divider)"><span style="width:32px;height:32px;display:grid;place-items:center;background:var(--color-accent-2-100);color:var(--color-accent-2-700)"><cs-i name="in"></cs-i></span><div style="flex:1;min-width:0"><div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">เซรั่มวิตามินซี Brightening</div><div style="font-size:12px;color:var(--color-neutral-700)">3 ต.ค. 14:30 · มินตรา</div></div><div style="text-align:right"><div style="font-weight:600;color:var(--color-accent-2-700)">+50</div><div style="font-size:11px;color:var(--color-neutral-700)">95 → 145</div></div></div>
+<div style="display:flex;align-items:center;gap:10px;padding:10px 0"><span style="width:32px;height:32px;display:grid;place-items:center;background:var(--color-accent-100);color:var(--color-accent-700)"><cs-i name="out"></cs-i></span><div style="flex:1;min-width:0"><div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ลิปสติก Velvet Rose</div><div style="font-size:12px;color:var(--color-neutral-700)">2 ต.ค. 10:15 · สมชาย</div></div><div style="text-align:right"><div style="font-weight:600;color:var(--color-accent-700)">−30</div><div style="font-size:11px;color:var(--color-neutral-700)">75 → 45</div></div></div>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--color-divider);background:var(--color-bg);padding-bottom:14px">
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-accent-700);box-shadow:inset 0 2px 0 var(--color-accent)"><cs-i name="grid" size="22"></cs-i>หน้าแรก</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="package" size="22"></cs-i>สินค้า</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="in" size="22"></cs-i>รับเข้า</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="out" size="22"></cs-i>จ่ายออก</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="menu" size="22"></cs-i>เพิ่มเติม</a>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>มือถือ · รายการสินค้า + ค้นหา/สแกน</div>
+<div class="dv-card" style="width:390px;height:844px;display:flex;flex-direction:column;position:relative">
+<div style="padding:12px 16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--color-divider)">
+<div style="display:flex;align-items:center;justify-content:space-between"><h3 style="margin:0">สินค้า</h3><span style="font-size:13px;color:var(--color-neutral-700)">10 รายการ</span></div>
+<div style="display:flex;gap:8px">
+<div style="position:relative;flex:1;min-width:0"><span style="position:absolute;left:12px;top:14px;color:var(--color-neutral-600)"><cs-i name="search"></cs-i></span><input class="input" style="min-height:46px;padding-left:38px;font-size:16px" placeholder="ค้นหาชื่อ, SKU, บาร์โค้ด"></div>
+<button class="btn btn-secondary" style="width:46px;height:46px;padding:0"><cs-i name="scan" size="20"></cs-i></button>
+<button class="btn btn-secondary" style="width:46px;height:46px;padding:0"><cs-i name="filter" size="20"></cs-i></button>
+</div>
+<div style="display:flex;gap:6px;overflow-x:auto;margin:0 -16px;padding:0 16px 2px">
+<span class="tag" style="flex:none;padding:8px 14px;background:var(--color-accent);color:#fff">ทั้งหมด</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider)">เมคอัพ</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider)">สกินแคร์</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider)">กันแดด</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider)">คลีนซิ่ง</span>
+<span class="tag tag-neutral" style="flex:none;padding:8px 14px;border:1px solid var(--color-divider)">บำรุงผิว</span>
+</div>
+</div>
+<div style="flex:1;overflow:hidden;padding:0 16px 80px">
+<sc-for list="{{ products }}" as="p" hint-placeholder-count="7">
+<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--color-divider);min-height:72px">
+<div style="width:48px;height:48px;flex:none;display:grid;place-items:center;border:1px solid var(--color-divider);background:repeating-linear-gradient(135deg,var(--color-accent-100) 0 6px,var(--color-bg) 6px 12px);font:600 13px var(--font-heading);color:var(--color-accent-700)">{{ p.ab }}</div>
+<div style="flex:1;min-width:0"><div style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</div><div style="font-size:12px;color:var(--color-neutral-700)">{{ p.sku }} · {{ p.cat }}</div></div>
+<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px"><span style="font:600 18px/1 var(--font-heading)">{{ p.qty }}</span><span class="tag" style="padding:2px 8px;background:{{ p.tagBg }};color:{{ p.tagFg }}">{{ p.status }}</span></div>
+</div>
+</sc-for>
+</div>
+<button class="btn btn-primary blueprint" style="position:absolute;right:18px;bottom:96px;min-height:52px;padding:0 18px;font-size:16px;box-shadow:var(--shadow-md)"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><cs-i name="plus" size="20"></cs-i>เพิ่มสินค้า</button>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--color-divider);background:var(--color-bg);padding-bottom:14px">
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="grid" size="22"></cs-i>หน้าแรก</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-accent-700);box-shadow:inset 0 2px 0 var(--color-accent)"><cs-i name="package" size="22"></cs-i>สินค้า</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="in" size="22"></cs-i>รับเข้า</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="out" size="22"></cs-i>จ่ายออก</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="menu" size="22"></cs-i>เพิ่มเติม</a>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1d"><div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>มือถือ · รับเข้า / จ่ายออก / ปรับยอด (ฟอร์มเดียว)</div>
+<div class="dv-card" style="width:390px;height:844px;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--color-divider)">
+<button class="btn btn-ghost" style="width:44px;height:44px;padding:0;color:var(--color-text)"><cs-i name="left" size="22"></cs-i></button>
+<h4 style="margin:0;flex:1">บันทึกการเคลื่อนไหวสต็อก</h4></div>
+<div style="flex:1;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:16px">
+<div class="seg" style="display:grid;grid-template-columns:repeat(3,1fr)">
+<label class="seg-opt" style="justify-content:center;min-height:44px"><input type="radio" name="mv" checked>รับเข้า</label>
+<label class="seg-opt" style="justify-content:center;min-height:44px"><input type="radio" name="mv">จ่าย/เบิก</label>
+<label class="seg-opt" style="justify-content:center;min-height:44px"><input type="radio" name="mv">ปรับยอด</label>
+</div>
+<div class="blueprint" style="height:150px;display:grid;place-items:center;background:var(--color-neutral-900);color:#fff;position:relative"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="width:220px;height:84px;border:2px solid var(--color-accent-300);position:relative"><div style="position:absolute;left:8px;right:8px;top:40px;height:2px;background:var(--color-accent)"></div></div>
+<span style="position:absolute;bottom:10px;font-size:12px;opacity:.85">เล็งกล้องไปที่ Barcode / QR ของสินค้า</span></div>
+<div class="card blueprint" style="flex-direction:row;align-items:center;gap:12px;padding:12px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="width:44px;height:44px;flex:none;display:grid;place-items:center;border:1px solid var(--color-divider);background:repeating-linear-gradient(135deg,var(--color-accent-2-100) 0 6px,var(--color-bg) 6px 12px);font:600 13px var(--font-heading);color:var(--color-accent-2-700)">VC</div>
+<div style="flex:1;min-width:0"><div class="card-title" style="font-size:16px">เซรั่มวิตามินซี Brightening</div><div class="card-meta">SKU SK-VC30 · 8851234567890</div></div>
+<div style="text-align:right"><div style="font-size:11px;color:var(--color-neutral-700)">คงเหลือ</div><div style="font:600 20px/1 var(--font-heading)">95</div></div></div>
+<div class="field"><label>จำนวนที่รับเข้า</label>
+<div style="display:grid;grid-template-columns:52px 1fr 52px;border:1px solid var(--color-divider)">
+<button class="btn" style="border:0;border-right:1px solid var(--color-divider);height:52px"><cs-i name="minus" size="20"></cs-i></button>
+<input class="input" style="border:0;text-align:center;font:600 24px var(--font-heading);min-height:52px;background:transparent" value="50">
+<button class="btn" style="border:0;border-left:1px solid var(--color-divider);height:52px"><cs-i name="plus" size="20"></cs-i></button></div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<div class="field"><label>เลขล็อต</label><input class="input" style="min-height:46px;font-size:16px" value="LOT-2610A"></div>
+<div class="field"><label>วันหมดอายุ</label><input class="input" style="min-height:46px;font-size:16px" value="12/10/2027"></div></div>
+<div class="field"><label>ผู้จำหน่าย / หมายเหตุ</label><input class="input" style="min-height:46px;font-size:16px" placeholder="เช่น บจก. บิวตี้ซัพพลาย"></div>
+</div>
+<div style="padding:12px 16px 26px;border-top:1px solid var(--color-divider);display:flex;align-items:center;gap:12px">
+<div style="flex:none"><div style="font-size:11px;color:var(--color-neutral-700)">หลังบันทึก</div><div style="font:600 18px/1.1 var(--font-heading)">95 → <span style="color:var(--color-accent-2-700)">145</span></div></div>
+<button class="btn btn-primary blueprint" style="flex:1;min-height:50px;font-size:17px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>บันทึกรับเข้า</button></div>
+</div></div>
+
+<div class="dv-opt" id="1e"><div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>มือถือ · เมนูเพิ่มเติม / สิทธิ์ / ออกจากระบบ</div>
+<div class="dv-card" style="width:390px;height:844px;display:flex;flex-direction:column">
+<div style="flex:1;overflow:hidden;padding:20px 16px;display:flex;flex-direction:column;gap:18px">
+<div class="card blueprint" style="flex-direction:row;align-items:center;gap:12px;padding:14px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="width:48px;height:48px;border-radius:50%;background:var(--color-accent-2-200);color:var(--color-accent-2-800);display:grid;place-items:center;font-weight:600;font-size:18px">ม</div>
+<div style="flex:1"><div class="card-title">มินตรา ทองสุข</div><div class="card-meta">mintra@rosebeauty.co</div></div><span class="tag tag-accent">เจ้าของร้าน</span></div>
+<div class="field"><label>ร้านที่กำลังจัดการ</label>
+<button class="btn btn-secondary" style="width:100%;min-height:52px;justify-content:flex-start;gap:10px;font-family:var(--font-body);font-weight:400;font-size:15px"><cs-i name="store" size="20"></cs-i><span style="flex:1;text-align:left">Rose Beauty · สาขาสยาม</span><span style="font-size:12px;color:var(--color-neutral-700)">สลับร้าน</span><cs-i name="right"></cs-i></button></div>
+<div style="display:flex;flex-direction:column">
+<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-700);padding-bottom:4px">คลังสินค้า</div>
+<a href="#" style="display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--color-divider);color:var(--color-text);text-decoration:none"><cs-i name="adjust" size="20"></cs-i><span style="flex:1">ปรับยอดสต็อก</span><cs-i name="right" style="color:var(--color-neutral-500)"></cs-i></a>
+<a href="#" style="display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--color-divider);color:var(--color-text);text-decoration:none"><cs-i name="history" size="20"></cs-i><span style="flex:1">ประวัติการเคลื่อนไหว</span><cs-i name="right" style="color:var(--color-neutral-500)"></cs-i></a>
+<a href="#" style="display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--color-divider);color:var(--color-text);text-decoration:none"><cs-i name="bell" size="20"></cs-i><span style="flex:1">การแจ้งเตือน</span><span class="tag tag-accent">5</span><cs-i name="right" style="color:var(--color-neutral-500)"></cs-i></a>
+<a href="#" style="display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--color-divider);color:var(--color-text);text-decoration:none"><cs-i name="chart" size="20"></cs-i><span style="flex:1">รายงาน</span><cs-i name="right" style="color:var(--color-neutral-500)"></cs-i></a>
+</div>
+<div style="display:flex;flex-direction:column">
+<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-700);padding-bottom:4px">ผู้ดูแลร้าน</div>
+<a href="#" style="display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--color-divider);color:var(--color-text);text-decoration:none"><cs-i name="users" size="20"></cs-i><span style="flex:1">ผู้ใช้และสิทธิ์</span><span style="font-size:13px;color:var(--color-neutral-700)">4 คน</span><cs-i name="right" style="color:var(--color-neutral-500)"></cs-i></a>
+<a href="#" style="display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--color-divider);color:var(--color-text);text-decoration:none"><cs-i name="settings" size="20"></cs-i><span style="flex:1">ตั้งค่าร้าน · จุดสั่งซื้อ · แจ้งเตือนหมดอายุ</span><cs-i name="right" style="color:var(--color-neutral-500)"></cs-i></a>
+</div>
+<button class="btn btn-secondary" style="min-height:50px;font-size:16px;color:var(--color-accent-700);border-color:var(--color-accent-300)"><cs-i name="logout" size="20"></cs-i>ออกจากระบบ</button>
+</div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--color-divider);background:var(--color-bg);padding-bottom:14px">
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="grid" size="22"></cs-i>หน้าแรก</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="package" size="22"></cs-i>สินค้า</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="in" size="22"></cs-i>รับเข้า</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-neutral-700)"><cs-i name="out" size="22"></cs-i>จ่ายออก</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;min-height:56px;font-size:11px;text-decoration:none;color:var(--color-accent-700);box-shadow:inset 0 2px 0 var(--color-accent)"><cs-i name="menu" size="22"></cs-i>เพิ่มเติม</a>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1f"><div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>แท็บเล็ตแนวนอน (iPad / Android Tablet) · สินค้า + รายละเอียด + ประวัติ</div>
+<div class="dv-card" style="width:1180px;height:820px;display:grid;grid-template-columns:72px 380px 1fr">
+<div style="border-right:1px solid var(--color-divider);display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0">
+<div style="width:40px;height:40px;display:grid;place-items:center;background:var(--color-accent);color:#fff;margin-bottom:10px"><cs-i name="package" size="22"></cs-i></div>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-neutral-700)"><cs-i name="grid" size="22"></cs-i></a>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-accent-700);background:var(--color-accent-100);box-shadow:inset 2px 0 0 var(--color-accent)"><cs-i name="package" size="22"></cs-i></a>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-neutral-700)"><cs-i name="in" size="22"></cs-i></a>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-neutral-700)"><cs-i name="out" size="22"></cs-i></a>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-neutral-700)"><cs-i name="adjust" size="22"></cs-i></a>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-neutral-700)"><cs-i name="history" size="22"></cs-i></a>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-neutral-700)"><cs-i name="chart" size="22"></cs-i></a>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-neutral-700)"><cs-i name="users" size="22"></cs-i></a>
+<a href="#" style="width:52px;height:52px;display:grid;place-items:center;color:var(--color-neutral-700);margin-top:auto"><cs-i name="logout" size="22"></cs-i></a>
+</div>
+<div style="border-right:1px solid var(--color-divider);display:flex;flex-direction:column;min-width:0">
+<div style="padding:16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--color-divider)">
+<div style="display:flex;align-items:center;justify-content:space-between"><h3 style="margin:0">สินค้า</h3><button class="btn btn-primary" style="min-height:44px"><cs-i name="plus"></cs-i>เพิ่มสินค้า</button></div>
+<div style="display:flex;gap:8px"><div style="position:relative;flex:1"><span style="position:absolute;left:12px;top:13px;color:var(--color-neutral-600)"><cs-i name="search"></cs-i></span><input class="input" style="min-height:44px;padding-left:38px" placeholder="ค้นหาชื่อ, SKU, บาร์โค้ด"></div><button class="btn btn-secondary" style="width:44px;height:44px;padding:0"><cs-i name="scan" size="20"></cs-i></button></div>
+</div>
+<div style="flex:1;overflow:hidden">
+<sc-for list="{{ products }}" as="p" hint-placeholder-count="8">
+<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--color-divider);background:{{ p.selBg }};box-shadow:{{ p.selBar }}">
+<div style="width:40px;height:40px;flex:none;display:grid;place-items:center;border:1px solid var(--color-divider);background:repeating-linear-gradient(135deg,var(--color-accent-100) 0 6px,var(--color-bg) 6px 12px);font:600 12px var(--font-heading);color:var(--color-accent-700)">{{ p.ab }}</div>
+<div style="flex:1;min-width:0"><div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</div><div style="font-size:12px;color:var(--color-neutral-700)">{{ p.sku }}</div></div>
+<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px"><span style="font:600 16px/1 var(--font-heading)">{{ p.qty }}</span><span class="tag" style="padding:1px 7px;background:{{ p.tagBg }};color:{{ p.tagFg }}">{{ p.status }}</span></div>
+</div>
+</sc-for>
+</div>
+</div>
+<div style="padding:22px 26px;display:flex;flex-direction:column;gap:20px;min-width:0;overflow:hidden">
+<div style="display:flex;align-items:flex-start;gap:16px">
+<div style="flex:1;min-width:0"><div class="card-kicker">สกินแคร์ · SK-VC30</div><h2 style="margin:2px 0 0">เซรั่มวิตามินซี Brightening 30ml</h2><div style="font-size:13px;color:var(--color-neutral-700)">ราคาทุน ฿320 · ราคาขาย ฿590 · จุดสั่งซื้อ 20 ชิ้น</div></div>
+<button class="btn btn-secondary" style="min-height:44px"><cs-i name="edit"></cs-i>แก้ไข</button>
+<button class="btn btn-secondary" style="width:44px;height:44px;padding:0;color:var(--color-accent-700)"><cs-i name="trash"></cs-i></button>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr) 200px;gap:0" class="blueprint"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="padding:14px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">คงเหลือ</div><div style="font:600 30px/1.1 var(--font-heading)">145</div></div>
+<div style="padding:14px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">มูลค่าคงคลัง</div><div style="font:600 30px/1.1 var(--font-heading)">฿46,400</div></div>
+<div style="padding:14px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">ล็อตที่มีอยู่</div><div style="font:600 30px/1.1 var(--font-heading)">2</div></div>
+<div style="padding:14px;border-right:1px solid var(--color-divider);background:var(--color-accent-2-100)"><div style="font-size:12px;color:var(--color-accent-2-800)">หมดอายุใกล้สุด</div><div style="font:600 30px/1.1 var(--font-heading);color:var(--color-accent-2-700)">12 พ.ย. 69</div></div>
+<div style="padding:12px;display:flex;flex-direction:column;align-items:center;gap:6px;justify-content:center"><div style="width:100%;height:38px;background:repeating-linear-gradient(90deg,var(--color-text) 0 2px,transparent 2px 4px,var(--color-text) 4px 5px,transparent 5px 8px,var(--color-text) 8px 11px,transparent 11px 12px)"></div><span style="font:12px ui-monospace,Menlo,monospace">8851234567890</span></div>
+</div>
+<div style="display:flex;gap:8px">
+<button class="btn btn-primary" style="min-height:44px;flex:1"><cs-i name="in"></cs-i>รับเข้า</button>
+<button class="btn btn-secondary" style="min-height:44px;flex:1"><cs-i name="out"></cs-i>จ่าย/เบิก</button>
+<button class="btn btn-secondary" style="min-height:44px;flex:1"><cs-i name="adjust"></cs-i>ปรับยอด</button>
+<button class="btn btn-secondary" style="min-height:44px;flex:1"><cs-i name="scan"></cs-i>พิมพ์ฉลาก QR</button>
+</div>
+<div><h4 style="margin:0 0 6px">ล็อตสินค้า</h4>
+<table class="table"><thead><tr><th>ล็อต</th><th>รับเข้า</th><th>หมดอายุ</th><th style="text-align:right">คงเหลือ</th></tr></thead><tbody>
+<tr><td>LOT-2604C</td><td>8 เม.ย. 69</td><td><span class="tag tag-accent-2">12 พ.ย. 69 · 37 วัน</span></td><td style="text-align:right">95</td></tr>
+<tr><td>LOT-2610A</td><td>3 ต.ค. 69</td><td>12 ต.ค. 70</td><td style="text-align:right">50</td></tr>
+</tbody></table></div>
+<div><div style="display:flex;justify-content:space-between;align-items:baseline"><h4 style="margin:0 0 6px">ประวัติการเคลื่อนไหว</h4><a href="#" style="font-size:13px">ดูทั้งหมด</a></div>
+<table class="table"><thead><tr><th>วันที่</th><th>ประเภท</th><th>เลขที่</th><th>ผู้ทำรายการ</th><th style="text-align:right">จำนวน</th><th style="text-align:right">คงเหลือ</th></tr></thead><tbody>
+<tr><td>3 ต.ค. 14:30</td><td><span class="tag tag-accent-2">รับเข้า</span></td><td>RCV-0041</td><td>มินตรา ท.</td><td style="text-align:right">+50</td><td style="text-align:right">145</td></tr>
+<tr><td>28 ก.ย. 11:05</td><td><span class="tag tag-accent">จ่ายออก</span></td><td>ISS-0102</td><td>สมชาย ใ.</td><td style="text-align:right">−12</td><td style="text-align:right">95</td></tr>
+<tr><td>20 ก.ย. 16:40</td><td><span class="tag tag-neutral">ปรับยอด</span></td><td>ADJ-0007</td><td>มินตรา ท.</td><td style="text-align:right">−3</td><td style="text-align:right">107</td></tr>
+</tbody></table></div>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1g"><div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>เดสก์ท็อป · Dashboard</div>
+<div class="dv-card" style="width:1440px;height:900px;display:grid;grid-template-columns:248px 1fr">
+<div style="border-right:1px solid var(--color-divider);display:flex;flex-direction:column;padding:18px 14px;gap:16px">
+<div style="display:flex;align-items:center;gap:10px;padding:0 6px"><div style="width:36px;height:36px;display:grid;place-items:center;background:var(--color-accent);color:#fff"><cs-i name="package" size="20"></cs-i></div><div><div style="font:600 21px/1 var(--font-heading)">CosmoStock</div><div style="font-size:11px;color:var(--color-accent-700)">จัดการคลังง่าย สต็อกแม่น ธุรกิจเติบโต</div></div></div>
+<button class="btn btn-secondary" style="justify-content:flex-start;min-height:44px;font-family:var(--font-body);font-weight:400;font-size:14px;gap:8px"><cs-i name="store"></cs-i><span style="flex:1;text-align:left">Rose Beauty · สยาม</span><cs-i name="down" size="16"></cs-i></button>
+<nav style="display:flex;flex-direction:column;gap:2px">
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-accent-800);background:var(--color-accent-100);box-shadow:inset 2px 0 0 var(--color-accent)"><cs-i name="grid"></cs-i>Dashboard</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="package"></cs-i>สินค้า</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="in"></cs-i>รับสินค้าเข้า</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="out"></cs-i>จ่าย/เบิกสินค้า</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="adjust"></cs-i>ปรับยอดสต็อก</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="history"></cs-i>ประวัติการเคลื่อนไหว</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="bell"></cs-i><span style="flex:1">แจ้งเตือน</span><span class="tag tag-accent" style="padding:1px 8px">5</span></a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="chart"></cs-i>รายงาน</a>
+</nav>
+<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-700);padding:0 10px">ผู้ดูแล</div>
+<nav style="display:flex;flex-direction:column;gap:2px;margin-top:-10px">
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="users"></cs-i>ผู้ใช้และสิทธิ์</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;text-decoration:none;color:var(--color-text)"><cs-i name="settings"></cs-i>ตั้งค่าร้าน</a>
+</nav>
+<div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 6px 0;border-top:1px solid var(--color-divider)">
+<div style="width:36px;height:36px;border-radius:50%;background:var(--color-accent-2-200);color:var(--color-accent-2-800);display:grid;place-items:center;font-weight:600">ม</div>
+<div style="flex:1;min-width:0"><div style="font-size:14px">มินตรา ทองสุข</div><div style="font-size:12px;color:var(--color-neutral-700)">เจ้าของร้าน</div></div>
+<button class="btn btn-ghost" style="width:40px;height:40px;padding:0;color:var(--color-neutral-700)"><cs-i name="logout" size="20"></cs-i></button></div>
+</div>
+<div style="padding:22px 30px;display:flex;flex-direction:column;gap:20px;min-width:0;overflow:hidden">
+<div style="display:flex;align-items:center;gap:12px">
+<div style="flex:1"><h2 style="margin:0">ภาพรวมคลังสินค้า</h2><div style="font-size:13px;color:var(--color-neutral-700)">อังคาร 6 ต.ค. 2569 · Rose Beauty สาขาสยาม</div></div>
+<div style="position:relative;width:300px"><span style="position:absolute;left:12px;top:10px;color:var(--color-neutral-600)"><cs-i name="search"></cs-i></span><input class="input" style="padding-left:38px;min-height:40px" placeholder="ค้นหาสินค้า / สแกนบาร์โค้ด"></div>
+<button class="btn btn-secondary" style="min-height:40px"><cs-i name="calendar"></cs-i>6 เดือนล่าสุด</button>
+<button class="btn btn-secondary" style="min-height:40px"><cs-i name="out"></cs-i>จ่ายออก</button>
+<button class="btn btn-primary blueprint" style="min-height:40px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><cs-i name="in"></cs-i>รับสินค้าเข้า</button>
+</div>
+<div class="blueprint" style="display:grid;grid-template-columns:repeat(6,1fr)"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="padding:14px 16px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">สินค้าทั้งหมด</div><div style="font:600 32px/1.1 var(--font-heading)">10 <span style="font-size:16px">SKU</span></div></div>
+<div style="padding:14px 16px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">คงเหลือรวม</div><div style="font:600 32px/1.1 var(--font-heading)">517 <span style="font-size:16px">ชิ้น</span></div></div>
+<div style="padding:14px 16px;border-right:1px solid var(--color-divider)"><div style="font-size:12px;color:var(--color-neutral-700)">มูลค่าคลัง</div><div style="font:600 32px/1.1 var(--font-heading)">฿122,265</div></div>
+<div style="padding:14px 16px;border-right:1px solid var(--color-divider);background:var(--color-accent-100)"><div style="font-size:12px;color:var(--color-accent-800)">ใกล้หมด</div><div style="font:600 32px/1.1 var(--font-heading);color:var(--color-accent-700)">2</div></div>
+<div style="padding:14px 16px;border-right:1px solid var(--color-divider);background:var(--color-accent-100)"><div style="font-size:12px;color:var(--color-accent-800)">หมดสต็อก</div><div style="font:600 32px/1.1 var(--font-heading);color:var(--color-accent-700)">1</div></div>
+<div style="padding:14px 16px;background:var(--color-accent-2-100)"><div style="font-size:12px;color:var(--color-accent-2-800)">ใกล้หมดอายุ (≤ 60 วัน)</div><div style="font:600 32px/1.1 var(--font-heading);color:var(--color-accent-2-700)">2</div></div>
+</div>
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:20px">
+<div class="card blueprint" style="padding:16px 18px;gap:12px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="display:flex;align-items:center;gap:16px"><div class="card-title" style="flex:1">สินค้าเข้า-ออก (ชิ้น)</div><span style="display:flex;align-items:center;gap:6px;font-size:12px"><i style="width:10px;height:10px;background:var(--color-accent-2-400)"></i>รับเข้า</span><span style="display:flex;align-items:center;gap:6px;font-size:12px"><i style="width:10px;height:10px;background:var(--color-accent-400)"></i>จ่ายออก</span></div>
+<div style="height:200px;display:grid;grid-template-columns:repeat(6,1fr);gap:18px;align-items:end;border-bottom:1px solid var(--color-divider);background:repeating-linear-gradient(0deg,var(--color-divider) 0 1px,transparent 1px 50px)">
+<sc-for list="{{ months }}" as="m" hint-placeholder-count="6"><div style="display:flex;gap:4px;align-items:end;height:100%;justify-content:center"><div style="width:22px;height:{{ m.inH }};background:var(--color-accent-2-400)"></div><div style="width:22px;height:{{ m.outH }};background:var(--color-accent-400)"></div></div></sc-for>
+</div>
+<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:18px;text-align:center;font-size:12px;color:var(--color-neutral-700);margin-top:-6px"><span>พ.ค.</span><span>มิ.ย.</span><span>ก.ค.</span><span>ส.ค.</span><span>ก.ย.</span><span>ต.ค.</span></div>
+</div>
+<div class="card blueprint" style="padding:16px 18px;gap:10px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="display:flex;align-items:center"><div class="card-title" style="flex:1">แจ้งเตือนสำคัญ</div><a href="#" style="font-size:13px">ดูทั้งหมด</a></div>
+<div style="display:flex;gap:10px;padding:10px;border:1px solid var(--color-accent-300);background:var(--color-accent-100)"><cs-i name="alert" style="color:var(--color-accent-700)"></cs-i><div style="flex:1;font-size:13px"><b style="font-weight:600">หมดสต็อก</b><br>รองพื้น Soft Matte</div><button class="btn btn-secondary" style="min-height:32px;font-size:13px;align-self:center">สั่งเพิ่ม</button></div>
+<div style="display:flex;gap:10px;padding:10px;border:1px solid var(--color-divider)"><cs-i name="package" style="color:var(--color-accent-600)"></cs-i><div style="flex:1;font-size:13px"><b style="font-weight:600">สต็อกต่ำ (2)</b><br>บลัชออน Peach Glow · 8 / 15<br>กันแดด SPF50+ PA++++ · 10 / 20</div></div>
+<div style="display:flex;gap:10px;padding:10px;border:1px solid var(--color-divider)"><cs-i name="clock" style="color:var(--color-accent-2-600)"></cs-i><div style="flex:1;font-size:13px"><b style="font-weight:600">ใกล้หมดอายุ (2)</b><br>เซรั่มวิตามินซี · 37 วัน<br>คลีนซิ่งบาล์ม Gentle · 52 วัน</div></div>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:20px">
+<div class="card blueprint" style="padding:16px 18px;gap:6px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div style="display:flex;align-items:center"><div class="card-title" style="flex:1">รายการเคลื่อนไหวล่าสุด</div><a href="#" style="font-size:13px">ประวัติทั้งหมด</a></div>
+<table class="table"><thead><tr><th>วันที่</th><th>สินค้า</th><th>ประเภท</th><th>ผู้ทำรายการ</th><th style="text-align:right">จำนวน</th><th style="text-align:right">คงเหลือ</th></tr></thead><tbody>
+<tr><td>3 ต.ค. 14:30</td><td>เซรั่มวิตามินซี Brightening</td><td><span class="tag tag-accent-2">รับเข้า</span></td><td>มินตรา ท.</td><td style="text-align:right">+50</td><td style="text-align:right">145</td></tr>
+<tr><td>2 ต.ค. 10:15</td><td>ลิปสติก Velvet Rose</td><td><span class="tag tag-accent">จ่ายออก</span></td><td>สมชาย ใ.</td><td style="text-align:right">−30</td><td style="text-align:right">45</td></tr>
+<tr><td>1 ต.ค. 09:00</td><td>รองพื้น Soft Matte</td><td><span class="tag tag-accent">จ่ายออก</span></td><td>มินตรา ท.</td><td style="text-align:right">−15</td><td style="text-align:right">0</td></tr>
+</tbody></table>
+</div>
+<div class="card blueprint" style="padding:16px 18px;gap:10px"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<div class="card-title">มูลค่าตามหมวดหมู่</div>
+<sc-for list="{{ cats }}" as="c" hint-placeholder-count="5"><div style="display:grid;grid-template-columns:72px 1fr 70px;align-items:center;gap:10px;font-size:13px"><span>{{ c.name }}</span><div style="height:10px;background:var(--color-accent-100)"><div style="height:100%;width:{{ c.w }};background:var(--color-accent-500)"></div></div><span style="text-align:right">{{ c.val }}</span></div></sc-for>
+</div>
+</div>
+</div>
+</div></div>
+
+</div>
+<p class="dv-next">ต่อได้เลย: "ทำหน้าจัดการผู้ใช้และสิทธิ์ + หน้ารายงาน" · "ทำ <a class="dv-oid" href="#1b">1b</a> เป็นเวอร์ชันแท็บเล็ตแนวตั้ง" · "ทำเป็นต้นแบบกดได้จริง (Login → Dashboard → รับเข้า)"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const st = {
+      ok: ['ปกติ', 'var(--color-neutral-100)', 'var(--color-neutral-800)'],
+      low: ['ใกล้หมด', 'var(--color-accent-100)', 'var(--color-accent-800)'],
+      out: ['หมด', 'var(--color-accent-700)', '#fff'],
+      exp: ['ใกล้หมดอายุ', 'var(--color-accent-2-100)', 'var(--color-accent-2-800)']
+    };
+    const raw = [
+      ['VC', 'เซรั่มวิตามินซี Brightening', 'SK-VC30', 'สกินแคร์', 145, 'exp', true],
+      ['VR', 'ลิปสติก Velvet Rose', 'MU-LP01', 'เมคอัพ', 45, 'ok'],
+      ['SM', 'รองพื้น Soft Matte', 'MU-FD02', 'เมคอัพ', 0, 'out'],
+      ['PG', 'บลัชออน Peach Glow', 'MU-BL03', 'เมคอัพ', 8, 'low'],
+      ['SP', 'กันแดด SPF50+ PA++++', 'SC-SS01', 'กันแดด', 10, 'low'],
+      ['HB', 'มอยเจอร์ไรเซอร์ Hydra Boost', 'SK-MS02', 'บำรุงผิว', 56, 'ok'],
+      ['CB', 'คลีนซิ่งบาล์ม Gentle', 'CL-BM01', 'คลีนซิ่ง', 38, 'exp'],
+      ['RT', 'โทนเนอร์ Rose Water', 'SK-TN03', 'สกินแคร์', 72, 'ok']
+    ];
+    const products = raw.map(([ab, name, sku, cat, qty, s, sel]) => ({
+      ab, name, sku, cat, qty, status: st[s][0], tagBg: st[s][1], tagFg: st[s][2],
+      selBg: sel ? 'var(--color-accent-100)' : 'transparent',
+      selBar: sel ? 'inset 3px 0 0 var(--color-accent)' : 'none'
+    }));
+    const months = [[62, 48], [70, 55], [84, 66], [74, 60], [80, 70], [22, 14]].map(([i, o]) => ({ inH: i + '%', outH: o + '%' }));
+    const cats = [['สกินแคร์', 46, '฿52,930'], ['เมคอัพ', 30, '฿34,410'], ['บำรุงผิว', 14, '฿17,120'], ['คลีนซิ่ง', 7, '฿12,005'], ['กันแดด', 3, '฿5,800']]
+      .map(([name, w, val]) => ({ name, w: (w / 46 * 100) + '%', val }));
+    const mv = {
+      in: ['in', 'รับเข้า', 'var(--color-accent-2-100)', 'var(--color-accent-2-700)'],
+      out: ['out', 'จ่ายออก', 'var(--color-accent-100)', 'var(--color-accent-700)'],
+      adj: ['adjust', 'ปรับยอด', 'var(--color-neutral-100)', 'var(--color-neutral-800)']
+    };
+    const history = [
+      ['in', 'เซรั่มวิตามินซี Brightening', '3 ต.ค. 14:30', 'มินตรา', 'RCV-0041', '+50', '95 → 145'],
+      ['out', 'ลิปสติก Velvet Rose', '2 ต.ค. 10:15', 'สมชาย', 'ISS-0103', '−30', '75 → 45'],
+      ['out', 'รองพื้น Soft Matte', '1 ต.ค. 09:00', 'มินตรา', 'ISS-0102', '−15', '15 → 0'],
+      ['in', 'มอยเจอร์ไรเซอร์ Hydra Boost', '30 ก.ย. 16:45', 'มินตรา', 'RCV-0040', '+30', '26 → 56'],
+      ['adj', 'กันแดด SPF50+ PA++++', '28 ก.ย. 11:20', 'มินตรา', 'ADJ-0008', '+5', '5 → 10'],
+      ['out', 'บลัชออน Peach Glow', '27 ก.ย. 13:10', 'สมชาย', 'ISS-0101', '−7', '15 → 8'],
+      ['adj', 'โทนเนอร์ Rose Water', '25 ก.ย. 18:00', 'พิมพ์ชนก', 'ADJ-0007', '−2', '74 → 72']
+    ].map(([t, name, date, by, doc, qty, bal]) => ({ icon: mv[t][0], type: mv[t][1], bg: mv[t][2], fg: mv[t][3], name, date, by, doc, qty, bal }));
+    const roles = ['เจ้าของร้าน', 'ผู้จัดการ', 'พนักงานคลัง', 'ดูอย่างเดียว'];
+    const perms = [
+      ['ดู Dashboard / สินค้า', [1, 1, 1, 1]], ['เพิ่ม / แก้ไขสินค้า', [1, 1, 0, 0]], ['ลบสินค้า', [1, 0, 0, 0]],
+      ['รับเข้า / จ่ายออก', [1, 1, 1, 0]], ['ปรับยอดสต็อก', [1, 1, 0, 0]], ['ดูรายงาน / ส่งออก', [1, 1, 0, 1]],
+      ['จัดการผู้ใช้และสิทธิ์', [1, 0, 0, 0]], ['ตั้งค่าร้าน', [1, 0, 0, 0]]
+    ].map(([name, c]) => ({ name, cells: c.map(v => ({ icon: v ? 'check' : 'minus', color: v ? 'var(--color-accent-700)' : 'var(--color-neutral-400)' })) }));
+    const users = [
+      ['ม', 'มินตรา ทองสุข', 'mintra@rosebeauty.co', 'เจ้าของร้าน', 'ใช้งานอยู่', 'วันนี้ 14:30'],
+      ['ส', 'สมชาย ใจดี', 'somchai@rosebeauty.co', 'พนักงานคลัง', 'ใช้งานอยู่', 'วันนี้ 10:15'],
+      ['พ', 'พิมพ์ชนก แก้วใส', 'pimchanok@rosebeauty.co', 'ผู้จัดการ', 'ใช้งานอยู่', 'เมื่อวาน'],
+      ['ณ', 'ณัฐวุฒิ ศรีสุข', 'nattawut@rosebeauty.co', 'ดูอย่างเดียว', 'รอยืนยันอีเมล', '—']
+    ].map(([ini, name, email, role, status, last]) => ({ ini, name, email, role, status, last }));
+    const alerts = [
+      ['หมดสต็อก', 'รองพื้น Soft Matte', 'MU-FD02', 'คงเหลือ 0 / จุดสั่งซื้อ 10', '0%', 'alert', 'var(--color-accent-700)'],
+      ['สต็อกต่ำ', 'บลัชออน Peach Glow', 'MU-BL03', 'คงเหลือ 8 / จุดสั่งซื้อ 15', '53%', 'package', 'var(--color-accent-600)'],
+      ['สต็อกต่ำ', 'กันแดด SPF50+ PA++++', 'SC-SS01', 'คงเหลือ 10 / จุดสั่งซื้อ 20', '50%', 'package', 'var(--color-accent-600)']
+    ].map(([kind, name, sku, note, w, icon, color]) => ({ kind, name, sku, note, w, icon, color }));
+    const expiring = [
+      ['เซรั่มวิตามินซี Brightening', 'LOT-2604C · 95 ชิ้น', '12 พ.ย. 69', '37 วัน'],
+      ['คลีนซิ่งบาล์ม Gentle', 'LOT-2603B · 18 ชิ้น', '27 พ.ย. 69', '52 วัน']
+    ].map(([name, lot, date, days]) => ({ name, lot, date, days }));
+    const report = [
+      ['สกินแคร์', 3, 215, 160, '฿52,930'], ['เมคอัพ', 3, 120, 142, '฿34,410'], ['บำรุงผิว', 2, 80, 54, '฿17,120'],
+      ['คลีนซิ่ง', 1, 40, 22, '฿12,005'], ['กันแดด', 1, 30, 25, '฿5,800']
+    ].map(([cat, sku, rin, rout, val]) => ({ cat, sku, rin, rout, val }));
+    return { products, months, cats, history, roles, perms, users, alerts, expiring, report };
+  }
+}
+</script>
+</body>
+</html>
