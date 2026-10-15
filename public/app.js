@@ -410,15 +410,15 @@
 
   const ROUTES = [
     ['/login', viewLogin, { public: true }],
-    ['/', viewDashboard, { nav: 'dash' }],
-    ['/products', viewProducts, { nav: 'products' }],
+    ['/', viewDashboard, { nav: 'dash', agg: true }],
+    ['/products', viewProducts, { nav: 'products', agg: true }],
     ['/products/new', viewProductForm, { nav: 'products', perm: 'product.edit' }],
     ['/products/:id', viewProduct, { nav: 'products' }],
     ['/products/:id/edit', viewProductForm, { nav: 'products', perm: 'product.edit' }],
     ['/move/:type', viewMove, { nav: (p) => 'move-' + p.type }],
     ['/history', viewHistory, { nav: 'history', agg: true }],
     ['/alerts', viewAlerts, { nav: 'alerts', agg: true }],
-    ['/reports', viewReports, { nav: 'reports', perm: 'report' }],
+    ['/reports', viewReports, { nav: 'reports', perm: 'report', agg: true }],
     ['/users', viewUsers, { nav: 'users', perm: 'users|staff.edit' }],
     ['/system', viewSystem, { nav: 'system', sys: true }],
     ['/settings', viewSettings, { nav: 'settings' }],
@@ -478,7 +478,7 @@
       const out = await route.view({ params, query });
       clearTimeout(loader);
       if (seq !== renderSeq || !out) return;
-      view.innerHTML = (viewScope() !== 'branch' ? aggNotice(!!route.opts.agg) : '') + out.html;
+      view.innerHTML = (viewScope() !== 'branch' && route.opts.agg ? aggNotice() : '') + out.html;
       window.scrollTo(0, 0);
       out.mount?.(view);
       $('[data-agg-off]', view)?.addEventListener('click', () => setViewScope('branch'));
@@ -520,10 +520,12 @@
     render();
   }
   const mvScopeLabel = (scope) => (scope === 'shop' ? `ทุกสาขาในร้าน ${S.me.store.orgName}` : scope === 'all' ? 'ทุกร้านที่ดูแล' : storeLabel(S.me.store));
-  const aggNotice = (supported) => `<div class="imp-bar" role="status" style="margin:0 0 12px">${ic('store', 18)}<span>${supported
-    ? `กำลังดูข้อมูลรวม: <b>${esc(mvScopeLabel(viewScope()))}</b>`
-    : `กำลังดูรวม ${esc(mvScopeLabel(viewScope()))} — หน้านี้แสดงเฉพาะ <b>${esc(storeLabel(S.me.store))}</b> (ดูรวมได้ที่หน้าแจ้งเตือนและประวัติ)`}</span>
+  const aggNotice = () => `<div class="imp-bar" role="status" style="margin:0 0 12px">${ic('store', 18)}<span>กำลังดูข้อมูลรวม: <b>${esc(mvScopeLabel(viewScope()))}</b></span>
     <button type="button" class="btn btn-secondary" data-agg-off>ดูเฉพาะสาขานี้</button></div>`;
+  // ค่า scope สำหรับส่งไป API ('' = สาขานี้)
+  const scopeQ = () => (viewScope() === 'branch' ? '' : viewScope());
+  // แถวของสาขาที่ใช้งานอยู่ (แก้ไข/รับ-จ่ายได้) — แถวสาขาอื่นในโหมดดูรวมดูได้อย่างเดียว
+  const ownRow = (r) => !r.storeId || r.storeId === S.me.store.id;
 
   function impBar() {
     const by = S.me?.user.impersonatedBy;
@@ -665,7 +667,7 @@
     const agg = mvScopeOpts();
     const id = await modal({
       title: 'เลือกร้านที่ต้องการจัดการ',
-      body: `${agg.length ? `<div class="small muted" style="font-weight:600">ดูข้อมูลรวม (แจ้งเตือนและประวัติ)</div>
+      body: `${agg.length ? `<div class="small muted" style="font-weight:600">ดูข้อมูลรวม</div>
         <div class="stack" style="gap:8px">${agg.map(([k, label, sub]) => `<button type="button" class="store-opt ${vs === k ? 'on' : ''}" data-view="${k}">${ic('grid', 20)}<span class="nm">${esc(label)}<div class="small muted">${esc(sub)}</div></span>${vs === k ? ic('check') : ''}</button>`).join('')}</div>
         <div class="small muted" style="font-weight:600;margin-top:4px">รายสาขา</div>` : ''}
         <div class="stack" style="gap:8px">${storeOptions(stores, vs === 'branch' ? store.id : -1, 'data-id', (s) => (s.id === store.id && vs === 'branch' ? ic('check') : ''))}</div>
@@ -898,8 +900,7 @@
   // ───────────────────────── shared fragments ─────────────────────────
 
   const mvWhere = (m) => (m.storeName ? (m.orgName ? `${m.orgName} · ${m.storeName}` : m.storeName) : '');
-  // แถวของสาขาอื่นเปิดหน้าสินค้าไม่ได้ (สินค้าแยกตามสาขา)
-  const mvLink = (m) => !m.deleted && (!m.storeId || m.storeId === S.me.store.id);
+  const mvLink = (m) => !m.deleted;
 
   function mvLi(m) {
     const tag = mvLink(m) ? 'a' : 'div';
@@ -929,8 +930,9 @@
   // ───────────────────────── dashboard ─────────────────────────
 
   async function viewDashboard() {
-    const d = await GET('/api/dashboard');
+    const d = await GET('/api/dashboard' + qs({ scope: scopeQ() }));
     const st = S.me.store;
+    const where = (a) => (mvWhere(a) ? ` · ${esc(mvWhere(a))}` : '');
     const k = d.kpi;
     const maxV = Math.max(1, ...d.months.flatMap((m) => [m.in, m.out]));
     const pct = (v) => (v / maxV * 100).toFixed(1) + '%';
@@ -938,10 +940,10 @@
     const catMax = Math.max(1, ...d.categories.map((c) => c.value));
     const alertHtml = [
       ...d.alerts.low.map((a) => `<a class="alert-item ${a.kind === 'out' ? 'hot' : ''}" href="#/products/${a.productId}">${ic(a.kind === 'out' ? 'alert' : 'package')}
-        <div class="tx"><b>${a.kind === 'out' ? 'หมดสต็อก' : 'สต็อกต่ำ'}</b> · ${esc(a.name)}<div class="small muted">คงเหลือ ${fmtN(a.qty)} / จุดสั่งซื้อ ${fmtN(a.reorderPoint)}</div></div>
+        <div class="tx"><b>${a.kind === 'out' ? 'หมดสต็อก' : 'สต็อกต่ำ'}</b> · ${esc(a.name)}<div class="small muted">คงเหลือ ${fmtN(a.qty)} / จุดสั่งซื้อ ${fmtN(a.reorderPoint)}${where(a)}</div></div>
         <span class="tag ${a.kind === 'out' ? 'st-out' : 'st-low'}">${fmtN(a.qty)}</span></a>`),
       ...d.alerts.expiring.map((e) => `<a class="alert-item exp" href="#/products/${e.productId}">${ic('clock')}
-        <div class="tx"><b>${e.days < 0 ? 'หมดอายุแล้ว' : 'ใกล้หมดอายุ'}</b> · ${esc(e.name)}<div class="small muted">${esc(e.lotNo || 'ไม่ระบุล็อต')} · ${fmtN(e.qty)} ${esc(e.unit)} · ${fmtD(e.expiry)}</div></div>
+        <div class="tx"><b>${e.days < 0 ? 'หมดอายุแล้ว' : 'ใกล้หมดอายุ'}</b> · ${esc(e.name)}<div class="small muted">${esc(e.lotNo || 'ไม่ระบุล็อต')} · ${fmtN(e.qty)} ${esc(e.unit)} · ${fmtD(e.expiry)}${where(e)}</div></div>
         <span class="tag ${e.days < 0 ? 'st-expired' : 'st-exp'}">${e.days < 0 ? 'หมดอายุ' : e.days + ' วัน'}</span></a>`),
     ];
     const quick = [
@@ -953,7 +955,7 @@
     return {
       html: `<div class="page">
         <div class="page-head">
-          <div class="ttl"><h2>ภาพรวมคลังสินค้า</h2><div class="sub">${new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })} · ${esc(st.name)}</div></div>
+          <div class="ttl"><h2>ภาพรวมคลังสินค้า</h2><div class="sub">${new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })} · ${esc(viewScope() === 'branch' ? st.name : mvScopeLabel(viewScope()))}</div></div>
           <div class="acts hide-mobile">
             <form id="qf" class="input-icon" style="width:280px">${ic('search')}<input class="input" name="q" placeholder="ค้นหาสินค้า / บาร์โค้ด"></form>
             ${can('stock.move') ? `<a class="btn btn-secondary" href="#/move/out">${ic('out')}จ่ายออก</a><a class="btn btn-primary blueprint" href="#/move/in">${CORNERS}${ic('in')}รับสินค้าเข้า</a>` : ''}
@@ -1023,9 +1025,12 @@
 
   async function viewProducts({ query }) {
     const state = { q: query.q || '', cat: query.cat || '', status: query.status || '' };
-    const [{ categories }, first] = await Promise.all([GET('/api/categories'), GET('/api/products' + qs(state))]);
+    const sq = scopeQ();
+    const [{ categories }, first] = await Promise.all([GET('/api/categories' + qs({ scope: sq })), GET('/api/products' + qs({ ...state, scope: sq }))]);
     let products = first.products;
     const editable = can('product.edit');
+    const multi = !!sq;
+    const whereLine = (p) => (mvWhere(p) ? `<div class="small muted">${ic('store', 14)} ${esc(mvWhere(p))}</div>` : '');
 
     const listHtml = () => {
       if (!products.length) {
@@ -1035,16 +1040,16 @@
       return `<div class="card blueprint hide-mobile" style="padding:6px 14px">${CORNERS}<div class="table-wrap"><table class="table">
           <thead><tr><th>สินค้า</th><th>SKU</th><th>หมวดหมู่</th><th class="right">ราคาขาย</th><th class="right">คงเหลือ</th><th>สถานะ</th><th class="right">จัดการ</th></tr></thead>
           <tbody>${products.map((p) => `<tr>
-            <td><div class="pn">${thumb(p, 'sm')}<a href="#/products/${p.id}">${esc(p.name)}</a></div></td>
+            <td><div class="pn">${thumb(p, 'sm')}<div style="min-width:0"><a href="#/products/${p.id}">${esc(p.name)}</a>${whereLine(p)}</div></div></td>
             <td class="nowrap">${esc(p.sku)}</td><td>${esc(p.category || '—')}</td><td class="right num">${fmtB(p.price)}</td>
             <td class="right num" style="font-weight:600">${fmtN(p.qty)} <span class="small muted">${esc(p.unit)}</span>${fmtPacks(p.qty, p.packs, p.unit) ? `<div class="small muted" style="font-weight:400">${esc(fmtPacks(p.qty, p.packs, p.unit))}</div>` : ''}</td><td>${stTag(p.status)}</td>
-            <td class="acts">
+            <td class="acts">${ownRow(p) ? `
               ${can('stock.move') ? `<a class="btn btn-ghost btn-ico plain" href="#/move/in?product=${p.id}" title="รับเข้า">${ic('in')}</a>` : ''}
               ${editable ? `<a class="btn btn-ghost btn-ico plain" href="#/products/${p.id}/edit" title="แก้ไข">${ic('edit')}</a>` : ''}
-              ${can('product.delete') ? `<button type="button" class="btn btn-ghost btn-ico plain" data-del="${p.id}" title="ลบ">${ic('trash')}</button>` : ''}
+              ${can('product.delete') ? `<button type="button" class="btn btn-ghost btn-ico plain" data-del="${p.id}" title="ลบ">${ic('trash')}</button>` : ''}` : ''}
             </td></tr>`).join('')}</tbody></table></div></div>
         <div class="list only-mobile">${products.map((p) => `<a class="li" href="#/products/${p.id}">${thumb(p, '')}
-          <div class="mid"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.sku)} · ${esc(p.category || '—')}</div>${fmtPacks(p.qty, p.packs, p.unit) ? `<div class="s">${esc(fmtPacks(p.qty, p.packs, p.unit))}</div>` : ''}</div>
+          <div class="mid"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.sku)} · ${esc(p.category || '—')}${mvWhere(p) ? ` · ${esc(mvWhere(p))}` : ''}</div>${fmtPacks(p.qty, p.packs, p.unit) ? `<div class="s">${esc(fmtPacks(p.qty, p.packs, p.unit))}</div>` : ''}</div>
           <div class="end"><span class="q">${fmtN(p.qty)}</span>${stTag(p.status)}</div></a>`).join('')}</div>`;
     };
 
@@ -1073,7 +1078,7 @@
         const reload = async () => {
           replaceQuery('/products', state);
           try {
-            products = (await GET('/api/products' + qs(state))).products;
+            products = (await GET('/api/products' + qs({ ...state, scope: sq }))).products;
             $('#plist', root).innerHTML = listHtml();
             $('#pcount', root).textContent = `${products.length} รายการ`;
           } catch (e) { toast(e.message, 'err'); }
@@ -1111,8 +1116,8 @@
           if (p && await deleteProduct(p)) reload();
         });
         $('#csv', root).addEventListener('click', () => downloadCSV(`cosmostock-products-${ymd(new Date())}.csv`, [
-          ['SKU', 'ชื่อสินค้า', 'หมวดหมู่', 'บาร์โค้ด', 'หน่วย', 'ขนาดบรรจุ', 'ราคาทุน', 'ราคาขาย', 'จุดสั่งซื้อ', 'คงเหลือ', 'ยอดแตกหน่วย', 'มูลค่าคงคลัง', 'สถานะ', 'หมดอายุใกล้สุด'],
-          ...products.map((p) => [p.sku, p.name, p.category, p.barcode, p.unit,
+          [...(multi ? ['ร้าน', 'สาขา'] : []), 'SKU', 'ชื่อสินค้า', 'หมวดหมู่', 'บาร์โค้ด', 'หน่วย', 'ขนาดบรรจุ', 'ราคาทุน', 'ราคาขาย', 'จุดสั่งซื้อ', 'คงเหลือ', 'ยอดแตกหน่วย', 'มูลค่าคงคลัง', 'สถานะ', 'หมดอายุใกล้สุด'],
+          ...products.map((p) => [...(multi ? [p.orgName, p.storeName] : []), p.sku, p.name, p.category, p.barcode, p.unit,
             (p.packs || []).map((k) => `${k.name}=${k.perQty}${p.unit}${k.barcode ? ' [' + k.barcode + ']' : ''}`).join('; '),
             p.cost, p.price, p.reorderPoint, p.qty, fmtPacks(p.qty, p.packs, p.unit), p.qty * p.cost, STATUS[p.status], p.nextExpiry || '']),
         ]));
@@ -1122,11 +1127,15 @@
 
   async function viewProduct({ params }) {
     const { product: p, lots, history, historyTotal } = await GET(`/api/products/${params.id}`);
+    const own = ownRow(p);
+    const ed = p.expiryDays ?? S.me.store.expiryDays;
     const exp = p.nextExpiry;
-    const expHot = exp && p.daysToExpiry <= S.me.store.expiryDays;
+    const expHot = exp && p.daysToExpiry <= ed;
     return {
       html: `<div class="page">
         <a href="#/products" class="btn btn-ghost back plain" style="align-self:flex-start">${ic('left')}สินค้าทั้งหมด</a>
+        ${own ? '' : `<div class="imp-bar" role="status">${ic('store', 18)}<span>สินค้าของ <b>${esc(mvWhere(p))}</b> — ดูได้อย่างเดียว สลับไปสาขานั้นเพื่อแก้ไขหรือรับ-จ่าย</span>
+          ${S.me.stores.some((s) => s.id === p.storeId) ? `<button type="button" class="btn btn-secondary" data-goto-store="${p.storeId}">สลับไปสาขานี้</button>` : ''}</div>`}
         <div class="detail-head">
           ${thumb(p, 'xl')}
           <div class="ttl">
@@ -1136,8 +1145,8 @@
             <div style="margin-top:8px">${stTag(p.status)}</div>
           </div>
           <div class="acts" style="display:flex;gap:8px">
-            ${can('product.edit') ? `<a class="btn btn-secondary" href="#/products/${p.id}/edit">${ic('edit')}แก้ไข</a>` : ''}
-            ${can('product.delete') ? `<button type="button" class="btn btn-secondary btn-ico" id="del" style="color:var(--color-accent-700)" aria-label="ลบสินค้า">${ic('trash')}</button>` : ''}
+            ${own && can('product.edit') ? `<a class="btn btn-secondary" href="#/products/${p.id}/edit">${ic('edit')}แก้ไข</a>` : ''}
+            ${own && can('product.delete') ? `<button type="button" class="btn btn-secondary btn-ico" id="del" style="color:var(--color-accent-700)" aria-label="ลบสินค้า">${ic('trash')}</button>` : ''}
           </div>
         </div>
         <div class="pstats blueprint">${CORNERS}
@@ -1148,8 +1157,8 @@
           <div class="qrbox"><div class="qr" id="qr"></div><div class="small" style="font-family:ui-monospace,monospace;overflow-wrap:anywhere">${esc(p.barcode || p.sku)}</div></div>
         </div>
         <div class="actions-4">
-          ${can('stock.move') ? `<a class="btn btn-primary" href="#/move/in?product=${p.id}">${ic('in')}รับเข้า</a><a class="btn btn-secondary" href="#/move/out?product=${p.id}">${ic('out')}จ่าย/เบิก</a>` : ''}
-          ${can('stock.adjust') ? `<a class="btn btn-secondary" href="#/move/adj?product=${p.id}">${ic('adjust')}ปรับยอด</a>` : ''}
+          ${own && can('stock.move') ? `<a class="btn btn-primary" href="#/move/in?product=${p.id}">${ic('in')}รับเข้า</a><a class="btn btn-secondary" href="#/move/out?product=${p.id}">${ic('out')}จ่าย/เบิก</a>` : ''}
+          ${own && can('stock.adjust') ? `<a class="btn btn-secondary" href="#/move/adj?product=${p.id}">${ic('adjust')}ปรับยอด</a>` : ''}
           <button type="button" class="btn btn-secondary" id="print">${ic('printer')}พิมพ์ฉลาก QR</button>
         </div>
         ${p.packs.length ? `<div class="card blueprint">${CORNERS}
@@ -1162,14 +1171,14 @@
           </tbody></table></div>` : ''}
         <div class="grid-2e">
           <div class="card blueprint">${CORNERS}
-            <div class="card-head"><div class="card-title">ประวัติการเคลื่อนไหว</div>${historyTotal > history.length ? `<a class="small" href="#/history?productId=${p.id}">ดูทั้งหมด (${fmtN(historyTotal)})</a>` : ''}</div>
+            <div class="card-head"><div class="card-title">ประวัติการเคลื่อนไหว</div>${own && historyTotal > history.length ? `<a class="small" href="#/history?productId=${p.id}">ดูทั้งหมด (${fmtN(historyTotal)})</a>` : ''}</div>
             ${mvBoth(history, { product: false })}
           </div>
           <div class="card blueprint">${CORNERS}
             <div class="card-title">ล็อตสินค้า</div>
             ${lots.length ? `<table class="table rtable"><thead><tr><th>ล็อต</th><th>รับเข้า</th><th>หมดอายุ</th><th class="right">คงเหลือ</th><th class="right">QR</th></tr></thead><tbody>
               ${lots.map((l) => `<tr><td class="lead" data-label="">${esc(l.lotNo || 'ไม่ระบุล็อต')}</td><td data-label="รับเข้า">${fmtD(ymd(new Date(l.receivedAt)))}</td>
-                <td data-label="หมดอายุ">${l.expiry ? (l.days <= S.me.store.expiryDays ? `<span class="tag ${l.days < 0 ? 'st-expired' : 'st-exp'}">${fmtD(l.expiry)} · ${daysLabel(l.days)}</span>` : fmtD(l.expiry)) : '—'}</td>
+                <td data-label="หมดอายุ">${l.expiry ? (l.days <= ed ? `<span class="tag ${l.days < 0 ? 'st-expired' : 'st-exp'}">${fmtD(l.expiry)} · ${daysLabel(l.days)}</span>` : fmtD(l.expiry)) : '—'}</td>
                 <td class="right num" data-label="คงเหลือ">${fmtN(l.qty)}</td>
                 <td class="right" data-label="QR">${lotPrintable(l) ? `<button type="button" class="btn btn-secondary btn-ico" data-lotqr="${l.id}" title="พิมพ์ฉลาก QR ล็อตนี้" aria-label="พิมพ์ฉลาก QR ล็อต ${esc(l.lotNo || fmtD(l.expiry))}">${ic('printer', 18)}</button>` : '<span class="small muted">—</span>'}</td></tr>`).join('')}</tbody></table>`
               : empty('package', 'ยังไม่มีสินค้าในคลัง')}
@@ -1182,6 +1191,15 @@
         $('#print', root).addEventListener('click', () => printLabels(p, lots));
         $$('[data-lotqr]', root).forEach((b) => b.addEventListener('click', () => printLabels(p, lots, Number(b.dataset.lotqr))));
         $('#del', root)?.addEventListener('click', async () => { if (await deleteProduct(p)) go('/products'); });
+        $('[data-goto-store]', root)?.addEventListener('click', async () => {
+          try {
+            try { localStorage.setItem('cs_view', 'branch'); } catch { /* ignore */ }
+            S.me = await POST('/api/me/store', { storeId: p.storeId });
+            updateShellBits();
+            toast('สลับไปที่ ' + storeLabel(S.me.store));
+            render();
+          } catch (e) { toast(e.message, 'err'); }
+        });
       },
     };
   }
@@ -1681,17 +1699,17 @@
       const w = a.reorderPoint ? Math.min(100, a.qty / a.reorderPoint * 100) : 0;
       return `<div class="card blueprint" style="gap:10px">${CORNERS}
         <div style="display:flex;align-items:center;gap:10px"><span style="color:${a.kind === 'out' ? 'var(--color-accent-700)' : 'var(--color-accent-600)'}">${ic(a.kind === 'out' ? 'alert' : 'package', 20)}</span>
-          <div style="flex:1;min-width:0"><div class="card-kicker" style="color:var(--color-accent-700)">${a.kind === 'out' ? 'หมดสต็อก' : 'สต็อกต่ำ'}${mvWhere(a) ? ` · ${esc(mvWhere(a))}` : ''}</div>${own(a) ? `<a class="card-title" href="#/products/${a.productId}" style="color:inherit;text-decoration:none;font-size:16px">${esc(a.name)}</a>` : `<div class="card-title" style="font-size:16px">${esc(a.name)}</div>`}</div>
+          <div style="flex:1;min-width:0"><div class="card-kicker" style="color:var(--color-accent-700)">${a.kind === 'out' ? 'หมดสต็อก' : 'สต็อกต่ำ'}${mvWhere(a) ? ` · ${esc(mvWhere(a))}` : ''}</div><a class="card-title" href="#/products/${a.productId}" style="color:inherit;text-decoration:none;font-size:16px">${esc(a.name)}</a></div>
           <span class="small muted">${esc(a.sku)}</span></div>
         <div class="progress"><div style="width:${w.toFixed(0)}%"></div></div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;font-size:13px" class="muted">คงเหลือ ${fmtN(a.qty)} / จุดสั่งซื้อ ${fmtN(a.reorderPoint)} ${esc(a.unit)}</span>
           ${can('stock.move') && own(a) ? `<a class="btn btn-secondary" href="#/move/in?product=${a.productId}">${ic('in')}รับเข้า</a>` : ''}</div>
       </div>`;
     }).join('') : empty('check', 'ไม่มีสินค้าใกล้หมดหรือหมดสต็อก'));
-    const expHtml = () => (d.expiring.length ? `<div class="list">${d.expiring.map((e) => `<${own(e) ? `a href="#/products/${e.productId}"` : 'div'} class="li">
+    const expHtml = () => (d.expiring.length ? `<div class="list">${d.expiring.map((e) => `<a href="#/products/${e.productId}" class="li">
         <span style="color:var(--color-accent-2-600)">${ic('clock', 20)}</span>
         <div class="mid"><div class="t">${esc(e.name)}</div>${mvWhere(e) ? `<div class="s">${ic('store', 14)} ${esc(mvWhere(e))}</div>` : ''}<div class="s">${esc(e.lotNo || 'ไม่ระบุล็อต')} · ${fmtN(e.qty)} ${esc(e.unit)} · หมดอายุ ${fmtD(e.expiry)}</div></div>
-        <span class="tag ${e.days < 0 ? 'st-expired' : 'st-exp'}">${e.days < 0 ? 'หมดอายุแล้ว' : e.days + ' วัน'}</span></${own(e) ? 'a' : 'div'}>`).join('')}</div>`
+        <span class="tag ${e.days < 0 ? 'st-expired' : 'st-exp'}">${e.days < 0 ? 'หมดอายุแล้ว' : e.days + ' วัน'}</span></a>`).join('')}</div>`
       : empty('check', `ไม่มีล็อตที่จะหมดอายุภายใน ${d.expiryDays} วัน`));
     const body = () => (tab === 'low' ? lowHtml() : tab === 'exp' ? expHtml() : mvHtml());
     return {
@@ -1741,7 +1759,7 @@
     };
     let data;
     const load = async () => {
-      data = await GET('/api/reports' + qs({ from: startOfDay(state.from).toISOString(), to: addDays(startOfDay(state.to), 1).toISOString() }));
+      data = await GET('/api/reports' + qs({ from: startOfDay(state.from).toISOString(), to: addDays(startOfDay(state.to), 1).toISOString(), scope: scopeQ() }));
     };
     await load();
     const TABS = { stock: ['package', 'สต็อกคงเหลือ', 'คงเหลือ'], movement: ['history', 'เคลื่อนไหวตามช่วงเวลา', 'เคลื่อนไหว'], expiring: ['clock', 'สินค้าใกล้หมดอายุ', 'หมดอายุ'], category: ['chart', 'มูลค่าคลังตามหมวด', 'ตามหมวด'] };
@@ -1752,37 +1770,40 @@
       ['ปีนี้', ymd(new Date(today.getFullYear(), 0, 1)), ymd(today)],
     ];
 
+    const wl = (r) => (mvWhere(r) ? `<div class="small muted">${esc(mvWhere(r))}</div>` : '');
+    const wc = (r) => (data.multi ? [r.orgName || '', r.storeName || ''] : []);
+    const wh = () => (data.multi ? ['ร้าน', 'สาขา'] : []);
     const tables = {
       stock: () => {
         const rows = data.stock;
         const tq = rows.reduce((s, p) => s + p.qty, 0), tv = rows.reduce((s, p) => s + p.qty * p.cost, 0);
         return {
           html: `<table class="table rtable"><thead><tr><th>สินค้า</th><th>SKU</th><th>หมวดหมู่</th><th class="right">คงเหลือ</th><th class="right">ราคาทุน</th><th class="right">มูลค่า</th><th>สถานะ</th></tr></thead><tbody>
-            ${rows.map((p) => `<tr><td class="lead" data-label="">${esc(p.name)}</td><td data-label="SKU">${esc(p.sku)}</td><td data-label="หมวดหมู่">${esc(p.category || '—')}</td>
+            ${rows.map((p) => `<tr><td class="lead" data-label="">${esc(p.name)}${wl(p)}</td><td data-label="SKU">${esc(p.sku)}</td><td data-label="หมวดหมู่">${esc(p.category || '—')}</td>
               <td class="right num" data-label="คงเหลือ">${fmtN(p.qty)}</td><td class="right num" data-label="ราคาทุน">${fmtB(p.cost)}</td><td class="right num" data-label="มูลค่า" style="font-weight:600">${fmtB(p.qty * p.cost)}</td><td data-label="สถานะ">${stTag(p.status)}</td></tr>`).join('')}
             <tr class="total"><td class="lead" data-label="" style="font-weight:600">รวม ${fmtN(rows.length)} SKU</td><td></td><td></td><td class="right num" data-label="คงเหลือรวม" style="font-weight:600">${fmtN(tq)}</td><td></td><td class="right num" data-label="มูลค่ารวม" style="font-weight:600">${fmtB(tv)}</td><td></td></tr></tbody></table>`,
-          csv: [['SKU', 'สินค้า', 'หมวดหมู่', 'คงเหลือ', 'หน่วย', 'ราคาทุน', 'มูลค่า', 'สถานะ'], ...rows.map((p) => [p.sku, p.name, p.category, p.qty, p.unit, p.cost, p.qty * p.cost, STATUS[p.status]]), ['', 'รวม', '', tq, '', '', tv, '']],
+          csv: [[...wh(), 'SKU', 'สินค้า', 'หมวดหมู่', 'คงเหลือ', 'หน่วย', 'ราคาทุน', 'มูลค่า', 'สถานะ'], ...rows.map((p) => [...wc(p), p.sku, p.name, p.category, p.qty, p.unit, p.cost, p.qty * p.cost, STATUS[p.status]]), [...wc({}), '', 'รวม', '', tq, '', '', tv, '']],
         };
       },
       movement: () => {
         const rows = data.movement;
         return {
           html: rows.length ? `<table class="table rtable"><thead><tr><th>สินค้า</th><th>SKU</th><th class="right">รับเข้า</th><th class="right">จ่ายออก</th><th class="right">ปรับยอด</th><th class="right">คงเหลือปัจจุบัน</th></tr></thead><tbody>
-            ${rows.map((r) => `<tr><td class="lead" data-label="">${esc(r.name)}${r.deleted ? ' <span class="small muted">(ลบแล้ว)</span>' : ''}</td><td data-label="SKU">${esc(r.sku)}</td>
+            ${rows.map((r) => `<tr><td class="lead" data-label="">${esc(r.name)}${r.deleted ? ' <span class="small muted">(ลบแล้ว)</span>' : ''}${wl(r)}</td><td data-label="SKU">${esc(r.sku)}</td>
               <td class="right num pos" data-label="รับเข้า">${fmtN(r.in)}</td><td class="right num neg" data-label="จ่ายออก">${fmtN(r.out)}</td><td class="right num" data-label="ปรับยอด">${signed(r.adj)}</td><td class="right num" data-label="คงเหลือ" style="font-weight:600">${fmtN(r.qty)}</td></tr>`).join('')}
             <tr class="total"><td class="lead" data-label="" style="font-weight:600">รวม</td><td></td><td class="right num" data-label="รับเข้า" style="font-weight:600">${fmtN(data.summary.in)}</td><td class="right num" data-label="จ่ายออก" style="font-weight:600">${fmtN(data.summary.out)}</td><td class="right num" data-label="ปรับยอด" style="font-weight:600">${signed(data.summary.adj)}</td><td></td></tr></tbody></table>`
             : empty('history', 'ไม่มีการเคลื่อนไหวในช่วงเวลานี้'),
-          csv: [['SKU', 'สินค้า', 'หมวดหมู่', 'รับเข้า', 'จ่ายออก', 'ปรับยอด', 'คงเหลือปัจจุบัน'], ...rows.map((r) => [r.sku, r.name, r.category, r.in, r.out, r.adj, r.qty])],
+          csv: [[...wh(), 'SKU', 'สินค้า', 'หมวดหมู่', 'รับเข้า', 'จ่ายออก', 'ปรับยอด', 'คงเหลือปัจจุบัน'], ...rows.map((r) => [...wc(r), r.sku, r.name, r.category, r.in, r.out, r.adj, r.qty])],
         };
       },
       expiring: () => {
         const rows = data.expiring;
         return {
           html: rows.length ? `<table class="table rtable"><thead><tr><th>สินค้า</th><th>ล็อต</th><th>หมดอายุ</th><th class="right">เหลือ (วัน)</th><th class="right">จำนวน</th></tr></thead><tbody>
-            ${rows.map((e) => `<tr><td class="lead" data-label="">${esc(e.name)}</td><td data-label="ล็อต">${esc(e.lotNo || '—')}</td><td data-label="หมดอายุ">${fmtD(e.expiry)}</td>
+            ${rows.map((e) => `<tr><td class="lead" data-label="">${esc(e.name)}${wl(e)}</td><td data-label="ล็อต">${esc(e.lotNo || '—')}</td><td data-label="หมดอายุ">${fmtD(e.expiry)}</td>
               <td class="right" data-label="เหลือ"><span class="tag ${e.days < 0 ? 'st-expired' : 'st-exp'}">${e.days < 0 ? 'หมดอายุแล้ว' : e.days + ' วัน'}</span></td><td class="right num" data-label="จำนวน">${fmtN(e.qty)} ${esc(e.unit)}</td></tr>`).join('')}</tbody></table>`
             : empty('check', `ไม่มีล็อตที่จะหมดอายุภายใน ${S.me.store.expiryDays} วัน`),
-          csv: [['SKU', 'สินค้า', 'ล็อต', 'วันหมดอายุ', 'เหลือ (วัน)', 'จำนวน'], ...rows.map((e) => [e.sku, e.name, e.lotNo, e.expiry, e.days, e.qty])],
+          csv: [[...wh(), 'SKU', 'สินค้า', 'ล็อต', 'วันหมดอายุ', 'เหลือ (วัน)', 'จำนวน'], ...rows.map((e) => [...wc(e), e.sku, e.name, e.lotNo, e.expiry, e.days, e.qty])],
         };
       },
       category: () => {
@@ -1808,7 +1829,7 @@
     return {
       html: `<div class="page">
         <div class="page-head">
-          <div class="ttl"><h2>รายงาน</h2><div class="sub">${esc(storeLabel(S.me.store))} · <span id="rng"></span></div></div>
+          <div class="ttl"><h2>รายงาน</h2><div class="sub">${esc(viewScope() === 'branch' ? storeLabel(S.me.store) : mvScopeLabel(viewScope()))} · <span id="rng"></span></div></div>
           <div class="acts no-print">
             <button type="button" class="btn btn-secondary" id="pdf">${ic('file')}PDF / พิมพ์</button>
             <button type="button" class="btn btn-primary blueprint" id="csv">${CORNERS}${ic('download')}ส่งออก Excel (CSV)</button>

@@ -706,9 +706,41 @@ api('DELETE', '/api/stores/:id', { store: false }, async (ctx) => {
 
 // — dashboard —
 
+// — ดูข้อมูลรวมหลายสาขา (scope=shop/all) — แต่ละแถวบอกร้าน/สาขามาด้วย —
+
+async function storeTags(ids) {
+  return new Map((await all('SELECT s.id, s.name, o.name AS org FROM stores s LEFT JOIN orgs o ON o.id = s.org_id WHERE s.id = ANY(?::int[])', ids))
+    .map((r) => [r.id, { storeId: r.id, storeName: r.name, orgName: r.org || '' }]));
+}
+
+async function listProductsScope(ids, opts) {
+  if (!Array.isArray(ids)) return await listProducts(ids, opts);
+  const tags = await storeTags(ids);
+  const out = [];
+  for (const id of ids) out.push(...(await listProducts(id, opts)).map((p) => ({ ...p, ...tags.get(id) })));
+  return out.sort((a, b) => a.name.localeCompare(b.name, 'th') || a.storeName.localeCompare(b.storeName, 'th'));
+}
+
+async function alertsScope(ctx, ids) {
+  if (!Array.isArray(ids)) return await buildAlerts(ids);
+  const tags = await storeTags(ids);
+  const out = { low: [], expiring: [], expiryDays: (await storeRow(ctx.storeId)).expiry_days };
+  for (const id of ids) {
+    const a = await buildAlerts(id);
+    out.low.push(...a.low.map((x) => ({ ...x, ...tags.get(id) })));
+    out.expiring.push(...a.expiring.map((x) => ({ ...x, ...tags.get(id) })));
+  }
+  out.low.sort((a, b) => a.qty - b.qty || a.name.localeCompare(b.name, 'th'));
+  out.expiring.sort((a, b) => String(a.expiry).localeCompare(String(b.expiry)));
+  return out;
+}
+
+const idList = (ids) => (Array.isArray(ids) ? ids : [ids]);
+
 api('GET', '/api/dashboard', async (ctx) => {
-  const products = await listProducts(ctx.storeId);
-  const alerts = await buildAlerts(ctx.storeId);
+  const ids = await movementStores(ctx, ctx.query.scope);
+  const products = await listProductsScope(ids);
+  const alerts = await alertsScope(ctx, ids);
   const kpi = {
     sku: products.length,
     qty: products.reduce((s, p) => s + p.qty, 0),
@@ -723,7 +755,7 @@ api('GET', '/api/dashboard', async (ctx) => {
     const d = new Date(start); d.setMonth(start.getMonth() + i);
     months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, month: d.getMonth(), year: d.getFullYear(), in: 0, out: 0 });
   }
-  for (const m of await all('SELECT type, qty, created_at FROM movements WHERE store_id = ? AND created_at >= ?', ctx.storeId, start.toISOString())) {
+  for (const m of await all('SELECT type, qty, created_at FROM movements WHERE store_id = ANY(?::int[]) AND created_at >= ?', idList(ids), start.toISOString())) {
     const d = new Date(m.created_at);
     const b = months.find((x) => x.key === `${d.getFullYear()}-${d.getMonth()}`);
     if (!b) continue;
@@ -739,7 +771,7 @@ api('GET', '/api/dashboard', async (ctx) => {
     kpi,
     months,
     alerts: { low: alerts.low.slice(0, 5), expiring: alerts.expiring.slice(0, 5), lowTotal: alerts.low.length, expiringTotal: alerts.expiring.length, expiryDays: alerts.expiryDays },
-    recent: (await listMovements(ctx.storeId, { limit: 6 })).rows,
+    recent: (await listMovements(ids, { limit: 6 })).rows,
     categories: Object.entries(cats).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
   };
 });
@@ -747,13 +779,14 @@ api('GET', '/api/dashboard', async (ctx) => {
 // — products —
 
 api('GET', '/api/categories', async (ctx) => {
-  const used = (await all("SELECT DISTINCT category FROM products WHERE store_id = ? AND deleted_at IS NULL AND category <> ''", ctx.storeId)).map((r) => r.category);
+  const ids = idList(await movementStores(ctx, ctx.query.scope));
+  const used = (await all("SELECT DISTINCT category FROM products WHERE store_id = ANY(?::int[]) AND deleted_at IS NULL AND category <> ''", ids)).map((r) => r.category);
   return { categories: [...new Set([...DEFAULT_CATEGORIES, ...used])] };
 });
 
 api('GET', '/api/products', async (ctx) => {
   const { q = '', category = '', status = '' } = ctx.query;
-  return { products: await listProducts(ctx.storeId, { q: q.trim().slice(0, 80), category, status }) };
+  return { products: await listProductsScope(await movementStores(ctx, ctx.query.scope), { q: q.trim().slice(0, 80), category, status }) };
 });
 
 api('GET', '/api/lookup', async (ctx) => {
@@ -818,15 +851,22 @@ async function productForStore(ctx, id) {
   return { ...productOut(p, store.expiry_days), packs: await packsOf(p.id) };
 }
 
+// สินค้าของสาขาอื่น (ดูรวม) เปิดดูได้ถ้าเข้าถึงสาขานั้นได้ — ฝั่งหน้าจอซ่อนปุ่มแก้ไข/รับ-จ่าย
 api('GET', '/api/products/:id', async (ctx) => {
-  const product = await productForStore(ctx, ctx.params.id);
+  const row = await get('SELECT store_id FROM products WHERE id = ? AND deleted_at IS NULL', Number(ctx.params.id) || 0);
+  if (!row) throw new HttpError(404, 'ไม่พบสินค้า');
+  const sid = row.store_id;
+  if (sid !== ctx.storeId && !await accessRole(ctx.session.user_id, sid)) throw new HttpError(404, 'ไม่พบสินค้า');
+  const product = await productForStore({ storeId: sid }, ctx.params.id);
+  Object.assign(product, (await storeTags([sid])).get(sid), { expiryDays: (await storeRow(sid)).expiry_days });
   const lots = await lotsOut(product.id);
-  const history = await listMovements(ctx.storeId, { productId: product.id, limit: 20 });
+  const history = await listMovements(sid, { productId: product.id, limit: 20 });
   return { product, lots, history: history.rows, historyTotal: history.total };
 });
 
 api('GET', '/api/products/:id/image', async (ctx) => {
-  const row = await get('SELECT image FROM products WHERE id = ? AND store_id = ?', Number(ctx.params.id) || 0, ctx.storeId);
+  let row = await get('SELECT image, store_id FROM products WHERE id = ?', Number(ctx.params.id) || 0);
+  if (row && row.store_id !== ctx.storeId && !await accessRole(ctx.session.user_id, row.store_id)) row = null;
   const m = row?.image && /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(row.image);
   if (!m) throw new HttpError(404, 'ไม่มีรูปสินค้า');
   ctx.res.writeHead(200, { 'Content-Type': m[1], 'Cache-Control': 'private, max-age=86400' });
@@ -1005,19 +1045,7 @@ api('GET', '/api/movements', async (ctx) => {
 
 // แจ้งเตือน: สาขานี้ (ค่าเริ่มต้น) หรือดูรวม scope=shop/all — แต่ละแถวบอกร้าน/สาขามาด้วย
 api('GET', '/api/alerts', async (ctx) => {
-  const ids = await movementStores(ctx, ctx.query.scope);
-  if (!Array.isArray(ids)) return await buildAlerts(ctx.storeId);
-  const names = new Map((await all('SELECT s.id, s.name, o.name AS org FROM stores s LEFT JOIN orgs o ON o.id = s.org_id WHERE s.id = ANY(?::int[])', ids))
-    .map((r) => [r.id, { storeId: r.id, storeName: r.name, orgName: r.org || '' }]));
-  const out = { low: [], expiring: [], expiryDays: (await storeRow(ctx.storeId)).expiry_days };
-  for (const id of ids) {
-    const a = await buildAlerts(id);
-    out.low.push(...a.low.map((x) => ({ ...x, ...names.get(id) })));
-    out.expiring.push(...a.expiring.map((x) => ({ ...x, ...names.get(id) })));
-  }
-  out.low.sort((a, b) => a.qty - b.qty || a.name.localeCompare(b.name, 'th'));
-  out.expiring.sort((a, b) => String(a.expiry).localeCompare(String(b.expiry)));
-  return out;
+  return await alertsScope(ctx, await movementStores(ctx, ctx.query.scope));
 });
 
 // — reports —
@@ -1025,10 +1053,12 @@ api('GET', '/api/alerts', async (ctx) => {
 api('GET', '/api/reports', { perm: 'report' }, async (ctx) => {
   const from = isoVal(ctx.query.from, 'วันที่เริ่ม') || new Date(Date.now() - 30 * DAY).toISOString();
   const to = isoVal(ctx.query.to, 'วันที่สิ้นสุด') || nowIso();
-  const products = await listProducts(ctx.storeId);
-  const moves = await all(`SELECT m.type, m.qty, m.product_id, p.category, p.name, p.sku, p.unit, p.deleted_at IS NOT NULL AS deleted
+  const ids = await movementStores(ctx, ctx.query.scope);
+  const tags = Array.isArray(ids) ? await storeTags(ids) : null;
+  const products = await listProductsScope(ids);
+  const moves = await all(`SELECT m.type, m.qty, m.product_id, m.store_id, p.category, p.name, p.sku, p.unit, p.deleted_at IS NOT NULL AS deleted
                      FROM movements m JOIN products p ON p.id = m.product_id
-                     WHERE m.store_id = ? AND m.created_at >= ? AND m.created_at < ?`, ctx.storeId, from, to);
+                     WHERE m.store_id = ANY(?::int[]) AND m.created_at >= ? AND m.created_at < ?`, idList(ids), from, to);
   const summary = { in: 0, out: 0, adj: 0, docs: moves.length, value: products.reduce((s, p) => s + p.qty * p.cost, 0) };
   const perProduct = new Map();
   const perCat = new Map();
@@ -1048,7 +1078,7 @@ api('GET', '/api/reports', { perm: 'report' }, async (ctx) => {
     cat(m.category)[field] += v;
     if (!perProduct.has(m.product_id)) {
       const cur = products.find((p) => p.id === m.product_id);
-      perProduct.set(m.product_id, { productId: m.product_id, name: m.name, sku: m.sku, unit: m.unit, category: m.category, deleted: !!m.deleted, in: 0, out: 0, adj: 0, qty: cur ? cur.qty : 0 });
+      perProduct.set(m.product_id, { productId: m.product_id, name: m.name, sku: m.sku, unit: m.unit, category: m.category, deleted: !!m.deleted, in: 0, out: 0, adj: 0, qty: cur ? cur.qty : 0, ...(tags ? tags.get(m.store_id) : {}) });
     }
     perProduct.get(m.product_id)[field] += v;
   }
@@ -1057,7 +1087,8 @@ api('GET', '/api/reports', { perm: 'report' }, async (ctx) => {
     categories: [...perCat.values()].sort((a, b) => b.value - a.value),
     movement: [...perProduct.values()].sort((a, b) => (b.in + b.out) - (a.in + a.out)),
     stock: products,
-    expiring: (await buildAlerts(ctx.storeId)).expiring,
+    expiring: (await alertsScope(ctx, ids)).expiring,
+    multi: !!tags,
   };
 });
 
