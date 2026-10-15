@@ -389,8 +389,8 @@
     ['/products/:id', viewProduct, { nav: 'products' }],
     ['/products/:id/edit', viewProductForm, { nav: 'products', perm: 'product.edit' }],
     ['/move/:type', viewMove, { nav: (p) => 'move-' + p.type }],
-    ['/history', viewHistory, { nav: 'history' }],
-    ['/alerts', viewAlerts, { nav: 'alerts' }],
+    ['/history', viewHistory, { nav: 'history', agg: true }],
+    ['/alerts', viewAlerts, { nav: 'alerts', agg: true }],
     ['/reports', viewReports, { nav: 'reports', perm: 'report' }],
     ['/users', viewUsers, { nav: 'users', perm: 'users' }],
     ['/system', viewSystem, { nav: 'system', sys: true }],
@@ -451,9 +451,10 @@
       const out = await route.view({ params, query });
       clearTimeout(loader);
       if (seq !== renderSeq || !out) return;
-      view.innerHTML = out.html;
+      view.innerHTML = (viewScope() !== 'branch' ? aggNotice(!!route.opts.agg) : '') + out.html;
       window.scrollTo(0, 0);
       out.mount?.(view);
+      $('[data-agg-off]', view)?.addEventListener('click', () => setViewScope('branch'));
     } catch (e) {
       clearTimeout(loader);
       if (seq !== renderSeq) return;
@@ -467,6 +468,35 @@
 
   // ชื่อเต็มของสาขา: "ร้าน · สาขา" (สาขาอยู่ภายใต้ร้านเสมอ)
   const storeLabel = (s) => (s ? (s.orgName ? `${s.orgName} · ${s.name}` : s.name) : '');
+
+  // ขอบเขตการดูข้อมูล (เลือกที่หน้าต่างเลือกร้าน) — เจ้าของร้านขึ้นไปดูรวมทุกสาขาของร้าน หรือทุกร้านที่ดูแลได้
+  // ใช้กับหน้าแจ้งเตือนและประวัติ; จำไว้ในเบราว์เซอร์นี้
+  function mvScopeOpts() {
+    const st = S.me?.store;
+    if (!st || st.role !== 'owner') return [];
+    const mine = S.me.stores.filter((s) => s.role === 'owner');
+    const branches = mine.filter((s) => s.orgId === st.orgId).length;
+    const shops = new Set(mine.map((s) => s.orgId)).size;
+    const o = [];
+    if (branches > 1) o.push(['shop', `ทุกสาขาในร้าน ${st.orgName}`, `${branches} สาขา`]);
+    if (shops > 1) o.push(['all', 'ทุกร้านที่ดูแล', `${shops} ร้าน · ${mine.length} สาขา`]);
+    return o;
+  }
+  const viewScope = () => {
+    let v = 'branch';
+    try { v = localStorage.getItem('cs_view') || 'branch'; } catch { /* ignore */ }
+    return mvScopeOpts().some(([k]) => k === v) ? v : 'branch';
+  };
+  function setViewScope(v) {
+    try { localStorage.setItem('cs_view', v); } catch { /* ignore */ }
+    updateShellBits();
+    render();
+  }
+  const mvScopeLabel = (scope) => (scope === 'shop' ? `ทุกสาขาในร้าน ${S.me.store.orgName}` : scope === 'all' ? 'ทุกร้านที่ดูแล' : storeLabel(S.me.store));
+  const aggNotice = (supported) => `<div class="imp-bar" role="status" style="margin:0 0 12px">${ic('store', 18)}<span>${supported
+    ? `กำลังดูข้อมูลรวม: <b>${esc(mvScopeLabel(viewScope()))}</b>`
+    : `กำลังดูรวม ${esc(mvScopeLabel(viewScope()))} — หน้านี้แสดงเฉพาะ <b>${esc(storeLabel(S.me.store))}</b> (ดูรวมได้ที่หน้าแจ้งเตือนและประวัติ)`}</span>
+    <button type="button" class="btn btn-secondary" data-agg-off>ดูเฉพาะสาขานี้</button></div>`;
 
   function impBar() {
     const by = S.me?.user.impersonatedBy;
@@ -543,7 +573,8 @@
   function updateShellBits() {
     const { user, store } = S.me;
     const count = store.alertCount;
-    $$('[data-bind=store]').forEach((e) => { e.textContent = storeLabel(store); });
+    const vs = viewScope();
+    $$('[data-bind=store]').forEach((e) => { e.textContent = vs === 'branch' ? storeLabel(store) : `ดูรวม · ${mvScopeLabel(vs)}`; });
     $$('[data-bind=user]').forEach((e) => { e.textContent = user.name; });
     $$('[data-bind=role]').forEach((e) => { e.textContent = user.superadmin ? 'ผู้ดูแลระบบ' : store.roleLabel; });
     $$('[data-bind=initial]').forEach((e) => { e.textContent = initial(user.name); });
@@ -600,21 +631,34 @@
 
   async function switchStore() {
     const { stores, store } = S.me;
+    const vs = viewScope();
+    const agg = mvScopeOpts();
     const id = await modal({
       title: 'เลือกร้านที่ต้องการจัดการ',
-      body: `<div class="stack" style="gap:8px">${storeOptions(stores, store.id, 'data-id', (s) => (s.id === store.id ? ic('check') : ''))}</div>
+      body: `${agg.length ? `<div class="small muted" style="font-weight:600">ดูข้อมูลรวม (แจ้งเตือนและประวัติ)</div>
+        <div class="stack" style="gap:8px">${agg.map(([k, label, sub]) => `<button type="button" class="store-opt ${vs === k ? 'on' : ''}" data-view="${k}">${ic('grid', 20)}<span class="nm">${esc(label)}<div class="small muted">${esc(sub)}</div></span>${vs === k ? ic('check') : ''}</button>`).join('')}</div>
+        <div class="small muted" style="font-weight:600;margin-top:4px">รายสาขา</div>` : ''}
+        <div class="stack" style="gap:8px">${storeOptions(stores, vs === 'branch' ? store.id : -1, 'data-id', (s) => (s.id === store.id && vs === 'branch' ? ic('check') : ''))}</div>
         ${store.canManageBranches || canNewShop() ? `<div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--color-divider);padding-top:12px">
           ${store.canManageBranches ? `<button type="button" class="btn btn-primary" data-addbr style="flex:1 1 160px">${ic('plus')}เพิ่มสาขาใน ${esc(store.orgName)}</button>` : ''}
           ${canNewShop() ? `<button type="button" class="btn btn-secondary" data-newshop style="flex:1 1 160px">${ic('store')}สร้างร้านใหม่</button>` : ''}</div>` : ''}`,
       onMount(dlg, close) {
         $$('[data-id]', dlg).forEach((b) => b.addEventListener('click', () => close(Number(b.dataset.id))));
+        $$('[data-view]', dlg).forEach((b) => b.addEventListener('click', () => close('view:' + b.dataset.view)));
         $('[data-addbr]', dlg)?.addEventListener('click', () => close('addbr'));
         $('[data-newshop]', dlg)?.addEventListener('click', () => close('newshop'));
       },
     });
     if (id === 'addbr') return addBranchDialog(store.orgId, store.orgName);
     if (id === 'newshop') return newShopDialog();
-    if (!id || id === store.id) return;
+    if (typeof id === 'string' && id.startsWith('view:')) {
+      setViewScope(id.slice(5));
+      toast('ดูข้อมูลรวม: ' + mvScopeLabel(viewScope()));
+      return;
+    }
+    if (!id) return;
+    if (id === store.id) { if (vs !== 'branch') setViewScope('branch'); return; }
+    try { localStorage.setItem('cs_view', 'branch'); } catch { /* ignore */ }
     try {
       S.me = await POST('/api/me/store', { storeId: id });
       toast('สลับไปที่ ' + storeLabel(S.me.store));
@@ -823,11 +867,16 @@
 
   // ───────────────────────── shared fragments ─────────────────────────
 
+  const mvWhere = (m) => (m.storeName ? (m.orgName ? `${m.orgName} · ${m.storeName}` : m.storeName) : '');
+  // แถวของสาขาอื่นเปิดหน้าสินค้าไม่ได้ (สินค้าแยกตามสาขา)
+  const mvLink = (m) => !m.deleted && (!m.storeId || m.storeId === S.me.store.id);
+
   function mvLi(m) {
-    const tag = m.deleted ? 'div' : 'a';
-    return `<${tag} class="li" ${m.deleted ? '' : `href="#/products/${m.productId}"`}>
+    const tag = mvLink(m) ? 'a' : 'div';
+    return `<${tag} class="li" ${mvLink(m) ? `href="#/products/${m.productId}"` : ''}>
       <span class="mv-ico ${m.type}">${ic(TYPE[m.type].icon)}</span>
       <div class="mid"><div class="t">${esc(m.name)}${m.deleted ? ' <span class="small muted">(ลบแล้ว)</span>' : ''}</div>
+        ${mvWhere(m) ? `<div class="s">${ic('store', 14)} ${esc(mvWhere(m))}</div>` : ''}
         <div class="s">${fmtDT(m.at)} · ${esc(m.by || '—')} · ${esc(m.docNo)}</div>${m.note || m.lotInfo || m.packName ? `<div class="s">${esc([packNote(m), m.lotInfo, m.note].filter(Boolean).join(' · '))}</div>` : ''}</div>
       <div class="end"><div class="q ${m.qty > 0 ? 'pos' : 'neg'}">${signed(m.qty)}</div><div class="small muted">${fmtN(m.before)} → ${fmtN(m.after)}</div></div>
     </${tag}>`;
@@ -836,7 +885,7 @@
   function mvTable(rows, { product = true } = {}) {
     return `<div class="table-wrap"><table class="table"><thead><tr><th>วันที่</th>${product ? '<th>สินค้า</th>' : ''}<th>ประเภท</th><th>เลขที่</th><th>ผู้ทำรายการ</th><th class="right">จำนวน</th><th class="right">คงเหลือ</th><th>ล็อต / หมายเหตุ</th></tr></thead><tbody>
       ${rows.map((m) => `<tr><td class="nowrap">${fmtDT(m.at)}</td>
-        ${product ? `<td>${m.deleted ? esc(m.name) + ' <span class="small muted">(ลบแล้ว)</span>' : `<a href="#/products/${m.productId}" style="color:inherit">${esc(m.name)}</a>`}</td>` : ''}
+        ${product ? `<td>${!mvLink(m) ? esc(m.name) + (m.deleted ? ' <span class="small muted">(ลบแล้ว)</span>' : '') : `<a href="#/products/${m.productId}" style="color:inherit">${esc(m.name)}</a>`}${mvWhere(m) ? `<div class="small muted">${esc(mvWhere(m))}</div>` : ''}</td>` : ''}
         <td>${tyTag(m.type)}</td><td class="nowrap">${esc(m.docNo)}</td><td>${esc(m.by || '—')}</td>
         <td class="right num ${m.qty > 0 ? 'pos' : 'neg'}" style="font-weight:600">${signed(m.qty)}${m.packName ? `<div class="small muted" style="font-weight:400">${esc(packNote(m))}</div>` : ''}</td><td class="right num">${fmtN(m.after)}</td>
         <td class="small muted">${esc([m.lotInfo, m.note].filter(Boolean).join(' · ')) || '—'}</td></tr>`).join('')}
@@ -1503,6 +1552,7 @@
     const state = {
       q: query.q || '', type: query.type || '', range: query.range || '30',
       from: query.from || ymd(addDays(new Date(), -29)), to: query.to || ymd(new Date()), productId: query.productId || '',
+      scope: viewScope(),
     };
     let productName = '';
     if (state.productId) productName = (await GET(`/api/products/${state.productId}`).catch(() => null))?.product?.name || 'สินค้าที่เลือก';
@@ -1514,7 +1564,7 @@
       } else if (state.range !== 'all') {
         from = addDays(startOfDay(ymd(new Date())), -(Number(state.range) - 1)).toISOString();
       }
-      return qs({ q: state.q, type: state.type, from, to, productId: state.productId, ...extra });
+      return qs({ q: state.q, type: state.type, from, to, productId: state.productId, scope: state.scope === 'branch' ? '' : state.scope, ...extra });
     };
     let rows = [], total = 0;
     const load = async (append = false) => {
@@ -1543,7 +1593,7 @@
       mount(root) {
         const paint = () => {
           $('#hlist', root).innerHTML = mvBoth(rows) + (rows.length < total ? `<button type="button" class="btn btn-secondary more-btn" id="more">โหลดเพิ่ม (${fmtN(total - rows.length)})</button>` : '');
-          $('#hcount', root).textContent = `${fmtN(total)} รายการ`;
+          $('#hcount', root).textContent = `${mvScopeLabel(state.scope)} · ${fmtN(total)} รายการ`;
           $('#more', root)?.addEventListener('click', async () => { await load(true).catch((e) => toast(e.message, 'err')); paint(); });
         };
         const reload = async () => {
@@ -1565,9 +1615,10 @@
         $('#csv', root).addEventListener('click', async () => {
           try {
             const d = await GET('/api/movements' + apiQuery({ limit: 1000 }));
+            const multi = state.scope !== 'branch';
             downloadCSV(`cosmostock-history-${ymd(new Date())}.csv`, [
-              ['วันเวลา', 'เลขที่', 'ประเภท', 'SKU', 'สินค้า', 'จำนวน', 'หน่วยบรรจุที่ใช้', 'ก่อน', 'หลัง', 'ล็อต', 'วันหมดอายุ', 'หมายเหตุ', 'ผู้ทำรายการ'],
-              ...d.rows.map((m) => [fmtDTY(m.at), m.docNo, TYPE[m.type].label, m.sku, m.name, m.qty, packNote(m), m.before, m.after, m.lotInfo || '', m.expiry || '', m.note || '', m.by || '']),
+              [...(multi ? ['ร้าน', 'สาขา'] : []), 'วันเวลา', 'เลขที่', 'ประเภท', 'SKU', 'สินค้า', 'จำนวน', 'หน่วยบรรจุที่ใช้', 'ก่อน', 'หลัง', 'ล็อต', 'วันหมดอายุ', 'หมายเหตุ', 'ผู้ทำรายการ'],
+              ...d.rows.map((m) => [...(multi ? [m.orgName, m.storeName] : []), fmtDTY(m.at), m.docNo, TYPE[m.type].label, m.sku, m.name, m.qty, packNote(m), m.before, m.after, m.lotInfo || '', m.expiry || '', m.note || '', m.by || '']),
             ]);
           } catch (e) { toast(e.message, 'err'); }
         });
@@ -1578,43 +1629,73 @@
   // ───────────────────────── alerts ─────────────────────────
 
   async function viewAlerts({ query }) {
-    const d = await GET('/api/alerts');
-    let tab = query.tab === 'exp' ? 'exp' : 'low';
+    const scope = viewScope();
+    const scopeQ = scope === 'branch' ? '' : scope;
+    const d = await GET('/api/alerts' + qs({ scope: scopeQ }));
+    const own = (a) => !a.storeId || a.storeId === S.me.store.id;
+    let tab = ['exp', 'mv'].includes(query.tab) ? query.tab : 'low';
+    // ประวัติรับเข้า / จ่ายออก ทุกรายการของสาขานี้ (โหลดทีละ 30)
+    const mv = { type: '', rows: [], total: 0 };
+    const loadMv = async (append = false) => {
+      const r = await GET('/api/movements' + qs({ type: mv.type, scope: scopeQ, limit: 30, offset: append ? mv.rows.length : 0 }));
+      mv.rows = append ? mv.rows.concat(r.rows) : r.rows;
+      mv.total = r.total;
+    };
+    await loadMv();
+    const mvTypes = [['', 'ทั้งหมด'], ['in', 'รับเข้า'], ['out', 'จ่ายออก / เบิก'], ['adj', 'ปรับยอด']];
+    const mvHtml = () => `<div class="chips" id="mvtypes">${mvTypes.map(([v, l]) => `<button type="button" class="chip ${mv.type === v ? 'on' : ''}" data-mvtype="${v}">${l}</button>`).join('')}</div>
+      <div class="small muted">ทุกรายการของ${esc(mvScopeLabel(scope))} — ${fmtN(mv.total)} รายการ · ค้นหา/กรองช่วงเวลาได้ที่ <a href="#/history">ประวัติ</a></div>
+      <div class="card blueprint">${CORNERS}${mv.rows.length ? mvBoth(mv.rows) : empty('history', 'ยังไม่มีรายการ')}
+        ${mv.rows.length < mv.total ? `<button type="button" class="btn btn-secondary more-btn" id="mvmore">โหลดเพิ่ม (${fmtN(mv.total - mv.rows.length)})</button>` : ''}</div>`;
     const lowHtml = () => (d.low.length ? d.low.map((a) => {
       const w = a.reorderPoint ? Math.min(100, a.qty / a.reorderPoint * 100) : 0;
       return `<div class="card blueprint" style="gap:10px">${CORNERS}
         <div style="display:flex;align-items:center;gap:10px"><span style="color:${a.kind === 'out' ? 'var(--color-accent-700)' : 'var(--color-accent-600)'}">${ic(a.kind === 'out' ? 'alert' : 'package', 20)}</span>
-          <div style="flex:1;min-width:0"><div class="card-kicker" style="color:var(--color-accent-700)">${a.kind === 'out' ? 'หมดสต็อก' : 'สต็อกต่ำ'}</div><a class="card-title" href="#/products/${a.productId}" style="color:inherit;text-decoration:none;font-size:16px">${esc(a.name)}</a></div>
+          <div style="flex:1;min-width:0"><div class="card-kicker" style="color:var(--color-accent-700)">${a.kind === 'out' ? 'หมดสต็อก' : 'สต็อกต่ำ'}${mvWhere(a) ? ` · ${esc(mvWhere(a))}` : ''}</div>${own(a) ? `<a class="card-title" href="#/products/${a.productId}" style="color:inherit;text-decoration:none;font-size:16px">${esc(a.name)}</a>` : `<div class="card-title" style="font-size:16px">${esc(a.name)}</div>`}</div>
           <span class="small muted">${esc(a.sku)}</span></div>
         <div class="progress"><div style="width:${w.toFixed(0)}%"></div></div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;font-size:13px" class="muted">คงเหลือ ${fmtN(a.qty)} / จุดสั่งซื้อ ${fmtN(a.reorderPoint)} ${esc(a.unit)}</span>
-          ${can('stock.move') ? `<a class="btn btn-secondary" href="#/move/in?product=${a.productId}">${ic('in')}รับเข้า</a>` : ''}</div>
+          ${can('stock.move') && own(a) ? `<a class="btn btn-secondary" href="#/move/in?product=${a.productId}">${ic('in')}รับเข้า</a>` : ''}</div>
       </div>`;
     }).join('') : empty('check', 'ไม่มีสินค้าใกล้หมดหรือหมดสต็อก'));
-    const expHtml = () => (d.expiring.length ? `<div class="list">${d.expiring.map((e) => `<a class="li" href="#/products/${e.productId}">
+    const expHtml = () => (d.expiring.length ? `<div class="list">${d.expiring.map((e) => `<${own(e) ? `a href="#/products/${e.productId}"` : 'div'} class="li">
         <span style="color:var(--color-accent-2-600)">${ic('clock', 20)}</span>
-        <div class="mid"><div class="t">${esc(e.name)}</div><div class="s">${esc(e.lotNo || 'ไม่ระบุล็อต')} · ${fmtN(e.qty)} ${esc(e.unit)} · หมดอายุ ${fmtD(e.expiry)}</div></div>
-        <span class="tag ${e.days < 0 ? 'st-expired' : 'st-exp'}">${e.days < 0 ? 'หมดอายุแล้ว' : e.days + ' วัน'}</span></a>`).join('')}</div>`
+        <div class="mid"><div class="t">${esc(e.name)}</div>${mvWhere(e) ? `<div class="s">${ic('store', 14)} ${esc(mvWhere(e))}</div>` : ''}<div class="s">${esc(e.lotNo || 'ไม่ระบุล็อต')} · ${fmtN(e.qty)} ${esc(e.unit)} · หมดอายุ ${fmtD(e.expiry)}</div></div>
+        <span class="tag ${e.days < 0 ? 'st-expired' : 'st-exp'}">${e.days < 0 ? 'หมดอายุแล้ว' : e.days + ' วัน'}</span></${own(e) ? 'a' : 'div'}>`).join('')}</div>`
       : empty('check', `ไม่มีล็อตที่จะหมดอายุภายใน ${d.expiryDays} วัน`));
+    const body = () => (tab === 'low' ? lowHtml() : tab === 'exp' ? expHtml() : mvHtml());
     return {
       html: `<div class="page narrow">
-        <div class="page-head"><div class="ttl"><h2>แจ้งเตือน</h2><div class="sub">สินค้าที่ต่ำกว่าจุดสั่งซื้อ และล็อตที่จะหมดอายุภายใน ${d.expiryDays} วัน</div></div>
+        <div class="page-head"><div class="ttl"><h2>แจ้งเตือน</h2><div class="sub">สินค้าที่ต่ำกว่าจุดสั่งซื้อ ล็อตที่จะหมดอายุภายใน ${d.expiryDays} วัน และประวัติรับเข้า/จ่ายออก — ${esc(mvScopeLabel(scope))}</div></div>
           ${can('settings') ? `<div class="acts"><a class="btn btn-secondary" href="#/settings">${ic('settings')}ตั้งค่าการแจ้งเตือน</a></div>` : ''}</div>
         <div class="seg" id="tabs">
           <a class="seg-opt ${tab === 'low' ? 'on' : ''}" href="#" data-tab="low">สต็อกใกล้หมด (${d.low.length})</a>
-          <a class="seg-opt ${tab === 'exp' ? 'on' : ''}" href="#" data-tab="exp">ใกล้หมดอายุ (${d.expiring.length})</a></div>
-        <div class="stack" id="alist">${tab === 'low' ? lowHtml() : expHtml()}</div>
+          <a class="seg-opt ${tab === 'exp' ? 'on' : ''}" href="#" data-tab="exp">ใกล้หมดอายุ (${d.expiring.length})</a>
+          <a class="seg-opt ${tab === 'mv' ? 'on' : ''}" href="#" data-tab="mv">รับเข้า / จ่ายออก (${fmtN(mv.total)})</a></div>
+        <div class="stack" id="alist">${body()}</div>
       </div>`,
       mount(root) {
+        const paint = () => { $('#alist', root).innerHTML = body(); };
         $('#tabs', root).addEventListener('click', (e) => {
           const b = e.target.closest('[data-tab]');
           if (!b) return;
           e.preventDefault();
           tab = b.dataset.tab;
           $$('[data-tab]', root).forEach((x) => x.classList.toggle('on', x === b));
-          $('#alist', root).innerHTML = tab === 'low' ? lowHtml() : expHtml();
-          replaceQuery('/alerts', { tab: tab === 'exp' ? 'exp' : '' });
+          paint();
+          replaceQuery('/alerts', { tab: tab === 'low' ? '' : tab });
         });
+        // แท็บประวัติ: กรองประเภท + โหลดเพิ่ม
+        $('#alist', root).addEventListener('click', async (e) => {
+          const t = e.target.closest('[data-mvtype]');
+          const more = e.target.closest('#mvmore');
+          if (!t && !more) return;
+          try {
+            if (t) { mv.type = t.dataset.mvtype; await loadMv(); } else await loadMv(true);
+            paint();
+          } catch (err) { toast(err.message, 'err'); }
+        });
+
       },
     };
   }

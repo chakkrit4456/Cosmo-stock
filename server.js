@@ -201,8 +201,10 @@ async function buildAlerts(storeId) {
   return { low, expiring, expiryDays: store.expiry_days };
 }
 
+// storeId: สาขาเดียว หรือ array ของหลายสาขา (ดูรวม — แต่ละแถวจะบอกร้าน/สาขามาด้วย)
 async function listMovements(storeId, { q = '', type = '', from = null, to = null, productId = null, limit = 50, offset = 0 } = {}) {
-  const where = ['m.store_id = ?'];
+  const many = Array.isArray(storeId);
+  const where = [many ? 'm.store_id = ANY(?::int[])' : 'm.store_id = ?'];
   const args = [storeId];
   if (type) { where.push('m.type = ?'); args.push(type); }
   if (from) { where.push('m.created_at >= ?'); args.push(from); }
@@ -216,10 +218,12 @@ async function listMovements(storeId, { q = '', type = '', from = null, to = nul
   const w = where.join(' AND ');
   const total = Number((await get(`SELECT COUNT(*) AS c FROM movements m JOIN products p ON p.id = m.product_id WHERE ${w}`, ...args)).c);
   const rows = (await all(`SELECT m.id, m.type, m.doc_no, m.qty, m.before_qty, m.after_qty, m.lot_info, m.expiry, m.note, m.user_name, m.created_at, m.pack_name, m.pack_count,
-                           p.id AS product_id, p.name, p.sku, p.unit, p.deleted_at IS NOT NULL AS deleted
-                    FROM movements m JOIN products p ON p.id = m.product_id
+                           p.id AS product_id, p.name, p.sku, p.unit, p.deleted_at IS NOT NULL AS deleted,
+                           m.store_id, s.name AS store_name, o.name AS org_name
+                    FROM movements m JOIN products p ON p.id = m.product_id JOIN stores s ON s.id = m.store_id LEFT JOIN orgs o ON o.id = s.org_id
                     WHERE ${w} ORDER BY m.created_at DESC, m.id DESC LIMIT ? OFFSET ?`, ...args, limit, offset))
     .map((m) => ({
+      ...(many ? { storeId: m.store_id, storeName: m.store_name, orgName: m.org_name || '' } : {}),
       id: m.id, type: m.type, docNo: m.doc_no, qty: m.qty, before: m.before_qty, after: m.after_qty,
       lotInfo: m.lot_info, expiry: m.expiry, note: m.note, by: m.user_name, at: m.created_at,
       productId: m.product_id, name: m.name, sku: m.sku, unit: m.unit, deleted: !!m.deleted,
@@ -944,10 +948,18 @@ api('POST', '/api/movements', async (ctx) => {
   return await moveStock(ctx.actor, ctx.body);
 });
 
+// ขอบเขต: branch = สาขานี้, shop = ทุกสาขาของร้านนี้, all = ทุกร้านที่เป็นเจ้าของ (เจ้าของร้านขึ้นไปเท่านั้น)
+async function movementStores(ctx, scope) {
+  if (scope !== 'shop' && scope !== 'all') return ctx.storeId;
+  if (ctx.role !== 'owner') throw new HttpError(403, 'ดูข้อมูลรวมหลายสาขาได้เฉพาะเจ้าของร้านขึ้นไป');
+  if (scope === 'shop') return (await orgStores(ctx.orgId)).map((s) => s.id);
+  return (await accessibleStores(ctx.session.user_id)).filter((s) => s.role === 'owner').map((s) => s.id);
+}
+
 api('GET', '/api/movements', async (ctx) => {
   const q = ctx.query;
   const type = ['in', 'out', 'adj'].includes(q.type) ? q.type : '';
-  return await listMovements(ctx.storeId, {
+  return await listMovements(await movementStores(ctx, q.scope), {
     q: String(q.q || '').trim().slice(0, 80),
     type,
     from: isoVal(q.from, 'วันที่เริ่ม'),
@@ -958,7 +970,22 @@ api('GET', '/api/movements', async (ctx) => {
   });
 });
 
-api('GET', '/api/alerts', async (ctx) => await buildAlerts(ctx.storeId));
+// แจ้งเตือน: สาขานี้ (ค่าเริ่มต้น) หรือดูรวม scope=shop/all — แต่ละแถวบอกร้าน/สาขามาด้วย
+api('GET', '/api/alerts', async (ctx) => {
+  const ids = await movementStores(ctx, ctx.query.scope);
+  if (!Array.isArray(ids)) return await buildAlerts(ctx.storeId);
+  const names = new Map((await all('SELECT s.id, s.name, o.name AS org FROM stores s LEFT JOIN orgs o ON o.id = s.org_id WHERE s.id = ANY(?::int[])', ids))
+    .map((r) => [r.id, { storeId: r.id, storeName: r.name, orgName: r.org || '' }]));
+  const out = { low: [], expiring: [], expiryDays: (await storeRow(ctx.storeId)).expiry_days };
+  for (const id of ids) {
+    const a = await buildAlerts(id);
+    out.low.push(...a.low.map((x) => ({ ...x, ...names.get(id) })));
+    out.expiring.push(...a.expiring.map((x) => ({ ...x, ...names.get(id) })));
+  }
+  out.low.sort((a, b) => a.qty - b.qty || a.name.localeCompare(b.name, 'th'));
+  out.expiring.sort((a, b) => String(a.expiry).localeCompare(String(b.expiry)));
+  return out;
+});
 
 // — reports —
 
