@@ -183,9 +183,6 @@ CREATE TABLE IF NOT EXISTS org_role_stores (
   PRIMARY KEY (org_id, role_key, store_id),
   FOREIGN KEY (org_id, role_key) REFERENCES org_roles(org_id, key) ON DELETE CASCADE
 );
--- เบอร์โทร (รูปแบบ 66xxxxxxxxx) ใช้รับ OTP ตอนลืมรหัสผ่าน
-ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS ux_users_phone ON users(phone) WHERE phone IS NOT NULL;
 -- รหัส OTP ลืมรหัสผ่าน (เก็บเฉพาะค่า hash)
 CREATE TABLE IF NOT EXISTS password_resets (
   id SERIAL PRIMARY KEY,

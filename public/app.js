@@ -738,13 +738,6 @@
   }
 
 
-  // 66812345678 → 081-234-5678
-  const fmtPhone = (p) => {
-    if (!p) return '';
-    const d = p.startsWith('66') ? `0${p.slice(2)}` : p;
-    return d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : d;
-  };
-
   const pwField = (id, name, label, auto) => `<div class="field"><label for="${id}">${label}</label>
     <div class="input-icon"><input class="input" id="${id}" name="${name}" type="password" required autocomplete="${auto}" style="padding-left:10px;padding-right:48px">
     <button type="button" class="btn btn-ghost btn-ico eye plain" data-eye="${id}" aria-label="แสดงรหัสผ่าน">${ic('eye')}</button></div></div>`;
@@ -756,31 +749,29 @@
     }));
   }
 
-  // ลืมรหัสผ่าน: ขอ OTP ทางอีเมลหรือ SMS → กรอกรหัส + ตั้งรหัสผ่านใหม่ (คืนค่าอีเมลของบัญชีเมื่อสำเร็จ)
+  // ลืมรหัสผ่าน: ขอ OTP ทางอีเมล → กรอกรหัส + ตั้งรหัสผ่านใหม่ (คืนค่าอีเมลของบัญชีเมื่อสำเร็จ)
   async function forgotPassword(prefill = '') {
     const sent = await modal({
       title: 'ลืมรหัสผ่าน',
-      body: `<div class="dialog-body">กรอกอีเมลหรือเบอร์โทรที่ผูกกับบัญชี ระบบจะส่งรหัสยืนยัน 6 หลักไปให้</div>
-        <div class="field"><label for="fg-id">อีเมล หรือ เบอร์โทร</label><input class="input" id="fg-id" value="${esc(prefill)}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="name@example.com หรือ 0812345678"></div>
-        <div class="hint">ใช้เบอร์โทรได้เมื่อเคยเพิ่มเบอร์ไว้ที่หน้า "ตั้งค่า" แล้ว</div>
+      body: `<div class="dialog-body">กรอกอีเมลที่ใช้เข้าสู่ระบบ ระบบจะส่งรหัสยืนยัน 6 หลักไปที่อีเมลนั้น</div>
+        <div class="field"><label for="fg-id">อีเมล</label><input class="input" id="fg-id" type="email" inputmode="email" value="${esc(prefill)}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="name@example.com"></div>
         <div class="form-err" hidden></div>`,
       onMount(dlg) { $('#fg-id', dlg).focus(); },
       actions: [{ label: 'ยกเลิก' }, { label: 'ส่งรหัสยืนยัน', cls: 'btn-primary', onClick: async (dlg) => {
-        const id = $('#fg-id', dlg).value.trim();
-        if (!id) throw new Error('กรุณากรอกอีเมลหรือเบอร์โทร');
-        return { id, ...await POST('/api/auth/forgot', { id }) };
+        const email = $('#fg-id', dlg).value.trim();
+        if (!email) throw new Error('กรุณากรอกอีเมล');
+        return { email, ...await POST('/api/auth/forgot', { email }) };
       } }],
     });
     if (!sent) return null;
-    const where = sent.channel === 'sms' ? 'SMS ไปที่เบอร์' : 'อีเมลไปที่';
     const resend = async (btn) => {
       btn.disabled = true;
-      try { await POST('/api/auth/forgot', { id: sent.id }); toast('ส่งรหัสใหม่แล้ว'); } catch (e) { toast(e.message, 'err'); }
+      try { await POST('/api/auth/forgot', { email: sent.email }); toast('ส่งรหัสใหม่แล้ว'); } catch (e) { toast(e.message, 'err'); }
       setTimeout(() => { if (btn.isConnected) btn.disabled = false; }, 30000);
     };
     return modal({
       title: 'ตั้งรหัสผ่านใหม่',
-      body: `<div class="dialog-body">ถ้ามีบัญชีนี้อยู่ ระบบได้ส่งรหัสยืนยันทาง${where} <b>${esc(sent.id)}</b> แล้ว (หมดอายุใน ${sent.ttlMinutes} นาที)${sent.channel === 'email' ? ' — ถ้าไม่เห็น ลองดูในโฟลเดอร์สแปม' : ''}</div>
+      body: `<div class="dialog-body">ถ้ามีบัญชีนี้อยู่ ระบบได้ส่งรหัสยืนยันไปที่อีเมล <b>${esc(sent.email)}</b> แล้ว (หมดอายุใน ${sent.ttlMinutes} นาที) — ถ้าไม่เห็น ลองดูในโฟลเดอร์สแปม</div>
         <div class="field"><label for="fg-code">รหัสยืนยัน 6 หลัก</label><input class="input" id="fg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="font-family:ui-monospace,monospace;font-size:20px;letter-spacing:4px"></div>
         ${pwField('fg-pw', 'pw', 'รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)', 'new-password')}
         ${pwField('fg-pw2', 'pw2', 'ยืนยันรหัสผ่านใหม่', 'new-password')}
@@ -796,7 +787,7 @@
         const pw = $('#fg-pw', dlg).value;
         if (!/^\d{6}$/.test(code)) throw new Error('กรุณากรอกรหัสยืนยัน 6 หลัก');
         if (pw !== $('#fg-pw2', dlg).value) throw new Error('รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน');
-        const r = await POST('/api/auth/reset', { id: sent.id, code, password: pw });
+        const r = await POST('/api/auth/reset', { email: sent.email, code, password: pw });
         toast('ตั้งรหัสผ่านใหม่แล้ว เข้าสู่ระบบด้วยรหัสใหม่ได้เลย');
         return r.email;
       } }],
@@ -2190,14 +2181,13 @@
                 <div class="field" style="flex:1 1 160px"><label for="eu-fn">ชื่อ *</label><input class="input" id="eu-fn" maxlength="40" value="${esc(first)}"></div>
                 <div class="field" style="flex:1 1 160px"><label for="eu-ln">นามสกุล</label><input class="input" id="eu-ln" maxlength="40" value="${esc(last)}"></div></div>
               <div class="field"><label for="eu-em">อีเมล (ใช้เข้าสู่ระบบ) *</label><input class="input" id="eu-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false" value="${esc(u.email)}"></div>
-              <div class="field"><label for="eu-ph">เบอร์โทรมือถือ</label><input class="input" id="eu-ph" type="tel" inputmode="tel" value="${esc(fmtPhone(u.phone))}" placeholder="ไม่บังคับ — ใช้รับ OTP ตอนลืมรหัสผ่าน"></div>
               <div class="field"><label for="eu-pw">รหัสผ่านใหม่</label><div style="display:flex;gap:8px"><input class="input" id="eu-pw" autocomplete="new-password" placeholder="เว้นว่าง = ไม่เปลี่ยนรหัสผ่าน" style="font-family:ui-monospace,monospace"><button type="button" class="btn btn-secondary" data-genpw>สุ่ม</button></div>
                 <div class="hint">อย่างน้อย 8 ตัวอักษร — ถ้าเปลี่ยน ${u.id === me ? 'อุปกรณ์อื่นของคุณ' : 'ผู้ใช้'}จะถูกออกจากระบบทุกอุปกรณ์</div></div>
               <div class="form-err" hidden></div>`,
             onMount(dlg) { $('[data-genpw]', dlg).addEventListener('click', () => { $('#eu-pw', dlg).value = genPassword(); }); },
             actions: [{ label: 'ยกเลิก' }, {
               label: 'บันทึก', cls: 'btn-primary', onClick: async (dlg) => {
-                const body = { firstName: $('#eu-fn', dlg).value, lastName: $('#eu-ln', dlg).value, email: $('#eu-em', dlg).value, phone: $('#eu-ph', dlg).value, password: $('#eu-pw', dlg).value };
+                const body = { firstName: $('#eu-fn', dlg).value, lastName: $('#eu-ln', dlg).value, email: $('#eu-em', dlg).value, password: $('#eu-pw', dlg).value };
                 await PUT(`/api/sys/users/${u.id}`, body);
                 return body;
               },
@@ -2274,10 +2264,8 @@
         ${imp ? '' : `<form class="card blueprint form-card" id="af" novalidate>${CORNERS}
           <div class="card-title">บัญชีของฉัน</div>
           <div class="field"><label for="a-nm">ชื่อที่แสดง</label><input class="input" id="a-nm" name="name" value="${esc(user.name)}" maxlength="80" required></div>
-          <div class="field"><label for="a-ph">เบอร์โทรมือถือ</label><input class="input" id="a-ph" name="phone" type="tel" inputmode="tel" value="${esc(fmtPhone(user.phone))}" placeholder="เช่น 0812345678">
-            <div class="hint">ใช้รับรหัส OTP ทาง SMS ตอนลืมรหัสผ่าน (ไม่บังคับ — ใช้อีเมลแทนได้)</div></div>
           <div class="form-err" hidden></div>
-          <div class="form-foot"><button type="submit" class="btn btn-secondary">บันทึกข้อมูลบัญชี</button></div>
+          <div class="form-foot"><button type="submit" class="btn btn-secondary">บันทึกชื่อ</button></div>
         </form>
         <form class="card blueprint form-card" id="pf" novalidate>${CORNERS}
           <div class="card-title">เปลี่ยนรหัสผ่าน</div>
@@ -2301,7 +2289,7 @@
         const sf = $('#sf', root);
         if (sf) onSubmit(sf, async (d) => { await PUT('/api/store', { name: d.name, expiryDays: Number(d.expiryDays) }); toast('บันทึกการตั้งค่าร้านแล้ว'); await refreshMe(); });
         const af = $('#af', root);
-        if (af) onSubmit(af, async (d) => { S.me = await PUT('/api/me', { name: d.name, phone: d.phone }); updateShellBits(); toast('บันทึกข้อมูลบัญชีแล้ว'); render(); });
+        if (af) onSubmit(af, async (d) => { S.me = await PUT('/api/me', { name: d.name }); updateShellBits(); toast('บันทึกชื่อแล้ว'); });
         const pf = $('#pf', root);
         if (pf) onSubmit(pf, async (d, form) => {
           if (d.next !== d.next2) throw new Error('รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน');

@@ -260,7 +260,7 @@ async function createSession(req, res, userId, storeId, remember, impersonatorId
 async function loadSession(req) {
   const token = parseCookies(req).cs_sid;
   if (!token || token.length > 100) return null;
-  const s = await get(`SELECT s.token, s.store_id, s.expires_at, s.impersonator_id, u.id AS user_id, u.name, u.email, u.phone, u.is_superadmin,
+  const s = await get(`SELECT s.token, s.store_id, s.expires_at, s.impersonator_id, u.id AS user_id, u.name, u.email, u.is_superadmin,
                         i.name AS impersonator_name, i.email AS impersonator_email
                  FROM sessions s JOIN users u ON u.id = s.user_id LEFT JOIN users i ON i.id = s.impersonator_id
                  WHERE s.token = ?`, hashToken(token));
@@ -451,7 +451,7 @@ async function mePayload(ctx) {
   }
   if (store) store.canManageBranches = await canManageBranches(session.user_id, current.orgId);
   const impersonatedBy = session.impersonator_id ? { name: session.impersonator_name, email: session.impersonator_email } : null;
-  return { user: { id: session.user_id, name: session.name, email: session.email, phone: session.phone || '', superadmin: !!session.superadmin, impersonatedBy }, stores, store };
+  return { user: { id: session.user_id, name: session.name, email: session.email, superadmin: !!session.superadmin, impersonatedBy }, stores, store };
 }
 
 // — auth —
@@ -478,27 +478,12 @@ api('POST', '/api/auth/logout', { auth: false, store: false }, async (ctx) => {
   return { ok: true };
 });
 
-// — ลืมรหัสผ่าน: ส่ง OTP 6 หลักทางอีเมลหรือ SMS ผ่าน Brevo —
-// BREVO_API_KEY, MAIL_FROM (อีเมลผู้ส่งที่ยืนยันใน Brevo แล้ว), MAIL_FROM_NAME, SMS_SENDER
+// — ลืมรหัสผ่าน: ส่ง OTP 6 หลักทางอีเมลผ่าน Brevo —
+// BREVO_API_KEY, MAIL_FROM (อีเมลผู้ส่งที่ยืนยันใน Brevo แล้ว), MAIL_FROM_NAME
 // ไม่ตั้ง BREVO_API_KEY และตั้ง RESET_DEBUG=1 = พิมพ์รหัสลง console แทน (ใช้ทดสอบบนเครื่องเท่านั้น)
 
 const RESET_TTL = 10 * 60 * 1000;
 const RESET_MAX_TRIES = 5;
-
-// เบอร์มือถือไทย 0812345678 / +66812345678 / 66812345678 → 66812345678
-function phoneVal(v, { required = false } = {}) {
-  const raw = String(v ?? '').replace(/[\s\-().]/g, '');
-  if (!raw) {
-    if (required) throw new HttpError(400, 'กรุณากรอกเบอร์โทร');
-    return null;
-  }
-  let d = raw.replace(/^\+/, '');
-  if (/^0\d{8,9}$/.test(d)) d = `66${d.slice(1)}`;
-  if (!/^\d{9,15}$/.test(d) || (d.startsWith('66') && !/^66\d{8,9}$/.test(d))) throw new HttpError(400, 'เบอร์โทรไม่ถูกต้อง');
-  return d;
-}
-
-const looksLikePhone = (s) => /^[+\d][\d\s\-().]{7,}$/.test(String(s || '').trim()) && !String(s).includes('@');
 
 async function brevo(pathname, body) {
   const r = await fetch(`https://api.brevo.com/v3${pathname}`, {
@@ -513,19 +498,10 @@ async function brevo(pathname, body) {
   }
 }
 
-async function sendResetCode(u, channel, code) {
+async function sendResetCode(u, code) {
   if (!process.env.BREVO_API_KEY) {
-    if (process.env.RESET_DEBUG === '1') { console.log(`[reset] ${channel} → ${channel === 'sms' ? u.phone : u.email}: ${code}`); return; }
-    throw new HttpError(503, 'ระบบยังไม่ได้ตั้งค่าการส่งอีเมล/SMS กรุณาติดต่อเจ้าของร้านเพื่อตั้งรหัสผ่านใหม่');
-  }
-  if (channel === 'sms') {
-    await brevo('/transactionalSMS/sms', {
-      sender: (process.env.SMS_SENDER || 'CosmoStock').slice(0, 11),
-      recipient: u.phone,
-      content: `CosmoStock รหัสยืนยัน ${code} (หมดอายุใน 10 นาที) ห้ามบอกรหัสนี้กับผู้อื่น`,
-      type: 'transactional',
-    });
-    return;
+    if (process.env.RESET_DEBUG === '1') { console.log(`[reset] ${u.email}: ${code}`); return; }
+    throw new HttpError(503, 'ระบบยังไม่ได้ตั้งค่าการส่งอีเมล กรุณาติดต่อเจ้าของร้านเพื่อตั้งรหัสผ่านใหม่');
   }
   if (!process.env.MAIL_FROM) throw new HttpError(503, 'ระบบยังไม่ได้ตั้งค่าอีเมลผู้ส่ง (MAIL_FROM)');
   await brevo('/smtp/email', {
@@ -549,34 +525,26 @@ function resetThrottle(key, max, windowMs) {
   resetHits.set(key, list);
 }
 
-async function resetUser(id) {
-  const s = String(id || '').trim();
-  if (!s) throw new HttpError(400, 'กรุณากรอกอีเมลหรือเบอร์โทร');
-  if (looksLikePhone(s)) {
-    const phone = phoneVal(s, { required: true });
-    return { channel: 'sms', user: await get('SELECT id, name, email, phone FROM users WHERE phone = ?', phone) };
-  }
-  return { channel: 'email', user: await get('SELECT id, name, email, phone FROM users WHERE email = ?', emailVal(s)) };
-}
+const resetUser = async (email) => await get('SELECT id, name, email FROM users WHERE email = ?', emailVal(email));
 
 api('POST', '/api/auth/forgot', { auth: false, store: false }, async (ctx) => {
   const ip = ctx.req.socket.remoteAddress;
-  const { channel, user } = await resetUser(ctx.body.id);
+  const user = await resetUser(ctx.body.email);
   resetThrottle(`ip|${ip}`, 10, 60 * 60 * 1000);
-  resetThrottle(`id|${String(ctx.body.id).trim().toLowerCase()}`, 3, 15 * 60 * 1000);
+  resetThrottle(`id|${user?.email || String(ctx.body.email).trim().toLowerCase()}`, 3, 15 * 60 * 1000);
   // ตอบเหมือนกันทุกกรณี ไม่บอกว่ามีบัญชีนี้หรือไม่
-  const out = { ok: true, channel, ttlMinutes: RESET_TTL / 60000 };
+  const out = { ok: true, ttlMinutes: RESET_TTL / 60000 };
   if (!user) return out;
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
   await run('UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0', user.id);
   await run('INSERT INTO password_resets(user_id, channel, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
-    user.id, channel, hashToken(`${user.id}:${code}`), Date.now() + RESET_TTL, Date.now());
-  await sendResetCode(user, channel, code);
+    user.id, 'email', hashToken(`${user.id}:${code}`), Date.now() + RESET_TTL, Date.now());
+  await sendResetCode(user, code);
   return out;
 });
 
 api('POST', '/api/auth/reset', { auth: false, store: false }, async (ctx) => {
-  const { user } = await resetUser(ctx.body.id);
+  const user = await resetUser(ctx.body.email);
   const code = String(ctx.body.code || '').replace(/\D/g, '');
   const bad = new HttpError(400, 'รหัสยืนยันไม่ถูกต้องหรือหมดอายุ กรุณาขอรหัสใหม่');
   if (!user || code.length !== 6) throw bad;
@@ -625,12 +593,6 @@ api('PUT', '/api/me', { store: false }, async (ctx) => {
   const name = text(ctx.body.name, { label: 'ชื่อ', max: 80, required: true });
   await run('UPDATE users SET name = ? WHERE id = ?', name, ctx.session.user_id);
   ctx.session.name = name;
-  if (ctx.body.phone !== undefined) {
-    const phone = phoneVal(ctx.body.phone);
-    if (phone && await get('SELECT 1 FROM users WHERE phone = ? AND id <> ?', phone, ctx.session.user_id)) throw new HttpError(409, 'เบอร์โทรนี้มีบัญชีอื่นใช้อยู่แล้ว');
-    await run('UPDATE users SET phone = ? WHERE id = ?', phone, ctx.session.user_id);
-    ctx.session.phone = phone;
-  }
   return await mePayload(ctx);
 });
 
@@ -1411,7 +1373,7 @@ api('GET', '/api/sys/overview', SYS, async () => {
     owners: (await orgOwners(o.id)).map((u) => ({ id: u.id, name: u.name, email: u.email })),
   }));
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
-  const users = await pall(await all('SELECT id, name, email, phone, is_superadmin, last_login, created_at FROM users ORDER BY created_at'), async (u) => {
+  const users = await pall(await all('SELECT id, name, email, is_superadmin, last_login, created_at FROM users ORDER BY created_at'), async (u) => {
     const access = [];
     for (const r of await all(`SELECT s.org_id, s.name, m.role FROM members m JOIN stores s ON s.id = m.store_id WHERE m.user_id = ? ORDER BY lower(s.name)`, u.id)) {
       const shop = orgName.get(r.org_id) || '';
@@ -1419,7 +1381,7 @@ api('GET', '/api/sys/overview', SYS, async () => {
         if (!access.some((a) => a.orgId === r.org_id && a.role === 'owner')) access.push({ orgId: r.org_id, shop, store: 'ทุกสาขา', role: 'owner', roleLabel: await roleName(r.org_id, 'owner') });
       } else access.push({ orgId: r.org_id, shop, store: r.name, role: r.role, roleLabel: await roleName(r.org_id, r.role) });
     }
-    return { id: u.id, name: u.name, email: u.email, phone: u.phone || '', superadmin: !!u.is_superadmin, lastLogin: u.last_login, createdAt: u.created_at, access };
+    return { id: u.id, name: u.name, email: u.email, superadmin: !!u.is_superadmin, lastLogin: u.last_login, createdAt: u.created_at, access };
   });
   return {
     orgs, users,
@@ -1477,13 +1439,8 @@ api('PUT', '/api/sys/users/:id', SYS, async (ctx) => {
     name = last ? `${first} ${last}` : first;
   }
   const email = b.email !== undefined ? emailVal(b.email) : null;
-  const phone = b.phone !== undefined ? phoneVal(b.phone) : undefined;
   const password = b.password ? passwordVal(b.password, 'รหัสผ่านใหม่') : null;
   await tx(async () => {
-    if (phone !== undefined) {
-      if (phone && await get('SELECT 1 FROM users WHERE phone = ? AND id <> ?', phone, u.id)) throw new HttpError(409, 'เบอร์โทรนี้มีบัญชีอื่นใช้อยู่แล้ว');
-      await run('UPDATE users SET phone = ? WHERE id = ?', phone, u.id);
-    }
     if (name !== undefined) await run('UPDATE users SET name = ? WHERE id = ?', text(name, { label: 'ชื่อ', max: 80, required: true }), u.id);
     if (email && email !== u.email) {
       if (await get('SELECT 1 FROM users WHERE email = ? AND id <> ?', email, u.id)) throw new HttpError(409, `อีเมล ${email} มีบัญชีอื่นใช้อยู่แล้ว`);
