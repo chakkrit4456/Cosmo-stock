@@ -755,17 +755,13 @@
         <div class="card-title" style="font-size:22px">เข้าสู่ระบบ</div>
         <div class="field"><label for="em">อีเมล</label><input class="input" id="em" name="email" type="email" inputmode="email" autocomplete="username" required autocapitalize="none" spellcheck="false"></div>
         ${pwField('pw', 'password', 'รหัสผ่าน', 'current-password')}
-        <div class="pw-row"><label class="check"><input type="checkbox" name="remember" checked>จดจำฉัน</label><a href="#" data-forgot style="padding:12px 0">ลืมรหัสผ่าน?</a></div>
+        <div class="pw-row"><label class="check"><input type="checkbox" name="remember" checked>จดจำฉัน</label></div>
         <div class="form-err" hidden></div>
         <button class="btn btn-primary blueprint" type="submit" style="min-height:50px;font-size:17px;width:100%">${CORNERS}เข้าสู่ระบบ</button>
         <div class="small muted">ถ้าบัญชีอยู่หลายร้าน เลือกร้านได้จากเมนูด้านบนหลังเข้าสู่ระบบ<br>ต้องการเปิดร้านใหม่ ติดต่อผู้ดูแลระบบเพื่อสร้างร้านและบัญชีเจ้าของร้าน</div>
       </form>`),
       mount(root) {
         bindEyes(root);
-        $('[data-forgot]', root).addEventListener('click', (e) => {
-          e.preventDefault();
-          modal({ title: 'ลืมรหัสผ่าน', body: '<div class="dialog-body">ให้เจ้าของร้านตั้งรหัสผ่านใหม่ให้ที่เมนู <b>ผู้ใช้และสิทธิ์</b> → ปุ่มกุญแจ ข้างชื่อของคุณ<br><br>ถ้าคุณเป็นเจ้าของร้านเอง ให้ติดต่อผู้ดูแลระบบของโปรเจกต์</div>', actions: [{ label: 'เข้าใจแล้ว', cls: 'btn-primary' }] });
-        });
         onSubmit($('#f', root), async (d) => {
           await POST('/api/auth/login', { email: d.email, password: d.password, remember: !!d.remember });
           await loadMe();
