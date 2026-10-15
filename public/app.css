@@ -159,6 +159,10 @@ a.kpi:hover { filter: brightness(.98); }
 .chart .bar { width: min(22px, 40%); min-height: 2px; position: relative; }
 .chart .bar.in { background: var(--color-accent-2-400); }
 .chart .bar.out { background: var(--color-accent-400); }
+/* กราฟเข้า-ออกยืดเต็มความสูงของแถว (การ์ดแจ้งเตือนข้าง ๆ สูงเท่าไรก็สูงเท่านั้น) */
+.grid-2.fill { align-items: stretch; }
+.chart-card { display: flex; flex-direction: column; }
+.chart-card .chart { flex: 1; height: auto; min-height: 200px; }
 .chart-x { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; text-align: center; font-size: 12px; color: var(--muted); margin-top: -6px; }
 .legend { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .legend i { width: 10px; height: 10px; display: inline-block; }
@@ -403,6 +407,7 @@ a.kpi:hover { filter: brightness(.98); }
   .row3 { grid-template-columns: 1fr 1fr; }
   .actions-4 { grid-template-columns: 1fr 1fr; }
   .chart { gap: 6px; height: 160px; }
+  .chart-card .chart { flex: none; height: 160px; min-height: 0; }
   .chart-x { gap: 6px; }
   .catbar { grid-template-columns: 72px 1fr 76px; }
   .fab { position: fixed; z-index: 30; right: 16px; bottom: calc(var(--bottom-h) + var(--safe-b) + 16px); min-height: 52px; padding: 0 18px; font-size: 16px; box-shadow: var(--shadow-md); }

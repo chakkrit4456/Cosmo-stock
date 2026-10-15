@@ -967,8 +967,8 @@
           <a class="kpi warn" href="#/alerts"><div class="k">หมดสต็อก</div><div class="v">${fmtN(k.out)}</div></a>
           <a class="kpi exp" href="#/alerts?tab=exp"><div class="k">ใกล้หมดอายุ (≤ ${d.alerts.expiryDays} วัน)</div><div class="v">${fmtN(k.expiring)}</div></a>
         </div>
-        <div class="grid-2">
-          <div class="card blueprint">${CORNERS}
+        <div class="grid-2 fill">
+          <div class="card blueprint chart-card">${CORNERS}
             <div class="card-head"><div class="card-title">สินค้าเข้า-ออก 6 เดือน (ชิ้น)</div>
               <span class="legend"><i style="background:var(--color-accent-2-400)"></i>รับเข้า</span><span class="legend"><i style="background:var(--color-accent-400)"></i>จ่ายออก</span></div>
             <div class="chart">${d.months.map((m) => `<div class="col"><div class="bar in" style="height:${pct(m.in)}" title="รับเข้า ${fmtN(m.in)}"></div><div class="bar out" style="height:${pct(m.out)}" title="จ่ายออก ${fmtN(m.out)}"></div></div>`).join('')}</div>
