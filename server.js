@@ -968,9 +968,33 @@ const roleVal = async (orgId, r) => {
   return r;
 };
 
+// ร้านและสาขาที่ผู้ใช้คนนี้เชิญคนเข้าได้ (มีสิทธิ์ "จัดการผู้ใช้") พร้อมบทบาทของแต่ละร้าน — ใช้ทำ dropdown ในหน้าต่างเชิญผู้ใช้
+api('GET', '/api/invite-targets', { store: false }, async (ctx) => {
+  const shops = new Map();
+  for (const s of await accessibleStores(ctx.session.user_id)) {
+    if (!await can(s.role, 'users', s.orgId)) continue;
+    if (!shops.has(s.orgId)) {
+      const org = await get('SELECT name FROM orgs WHERE id = ?', s.orgId);
+      shops.set(s.orgId, { orgId: s.orgId, orgName: org?.name || '', stores: [], roles: (await orgRoles(s.orgId)).map((r) => ({ key: r.key, name: r.name, scope: r.scope })) });
+    }
+    shops.get(s.orgId).stores.push({ id: s.id, name: s.name });
+  }
+  return { shops: [...shops.values()].sort((a, b) => a.orgName.localeCompare(b.orgName, 'th')) };
+});
+
 api('POST', '/api/members', { perm: 'users' }, async (ctx) => {
   const email = emailVal(ctx.body.email);
-  const role = await roleVal(ctx.orgId, ctx.body.role);
+  // สาขาปลายทาง: สาขาที่เลือกในหน้าต่างเชิญ (ค่าเริ่มต้น = สาขาที่ใช้งานอยู่) ต้องมีสิทธิ์จัดการผู้ใช้ที่สาขานั้นด้วย
+  const t = { storeId: ctx.storeId, orgId: ctx.orgId };
+  if (ctx.body.storeId != null && Number(ctx.body.storeId) !== ctx.storeId) {
+    const sid = Number(ctx.body.storeId) || 0;
+    const r = await accessRole(ctx.session.user_id, sid);
+    const orgId = await orgOf(sid);
+    if (!r || !await can(r, 'users', orgId)) throw new HttpError(403, 'คุณไม่มีสิทธิ์เชิญผู้ใช้เข้าสาขานี้');
+    t.storeId = sid;
+    t.orgId = orgId;
+  }
+  const role = await roleVal(t.orgId, ctx.body.role);
   return await tx(async () => {
     let u = await get('SELECT id FROM users WHERE email = ?', email);
     let created = false;
@@ -980,15 +1004,15 @@ api('POST', '/api/members', { perm: 'users' }, async (ctx) => {
       u = { id: await insert('INSERT INTO users(email, name, pass, created_at) VALUES (?, ?, ?, ?)', email, name, hashPassword(pass), nowIso()) };
       created = true;
     }
-    if (await isOrgOwner(u.id, ctx.orgId)) throw new HttpError(409, 'ผู้ใช้นี้เป็นเจ้าของร้านอยู่แล้ว (เห็นทุกสาขา)');
-    if (await get('SELECT 1 FROM members WHERE store_id = ? AND user_id = ?', ctx.storeId, u.id)) throw new HttpError(409, 'ผู้ใช้นี้เป็นสมาชิกของสาขานี้อยู่แล้ว');
+    if (await isOrgOwner(u.id, t.orgId)) throw new HttpError(409, 'ผู้ใช้นี้เป็นเจ้าของร้านอยู่แล้ว (เห็นทุกสาขา)');
+    if (await get('SELECT 1 FROM members WHERE store_id = ? AND user_id = ?', t.storeId, u.id)) throw new HttpError(409, 'ผู้ใช้นี้เป็นสมาชิกของสาขานี้อยู่แล้ว');
     if (role === 'owner') {
-      await setOrgOwner(u.id, ctx.orgId, ctx.storeId);
+      await setOrgOwner(u.id, t.orgId, t.storeId);
       return { ok: true, created };
     }
-    await assertBranchRule(u.id, ctx.orgId, role, ctx.storeId);
-    const ids = await roleScope(ctx.orgId, role) === 'multi' ? await branchIds(ctx, ctx.body.storeIds) : [ctx.storeId];
-    if (!ids.includes(ctx.storeId)) ids.push(ctx.storeId);
+    await assertBranchRule(u.id, t.orgId, role, t.storeId);
+    const ids = await roleScope(t.orgId, role) === 'multi' ? await branchIds(t, ctx.body.storeIds) : [t.storeId];
+    if (!ids.includes(t.storeId)) ids.push(t.storeId);
     for (const id of ids) {
       if (!await get('SELECT 1 FROM members WHERE store_id = ? AND user_id = ?', id, u.id)) await upsertMember(id, u.id, role);
     }
@@ -1223,10 +1247,32 @@ api('DELETE', '/api/sys/orgs/:id', SYS, async (ctx) => {
   return { ok: true };
 });
 
+// ผู้ดูแลระบบแก้ข้อมูลบัญชีได้ทุกบัญชี: ชื่อ-นามสกุล อีเมล รหัสผ่าน (เว้นว่าง = ไม่เปลี่ยน) และสิทธิ์ผู้ดูแลระบบ
 api('PUT', '/api/sys/users/:id', SYS, async (ctx) => {
   const u = await sysUser(ctx.params.id);
-  if (ctx.body.name !== undefined) await run('UPDATE users SET name = ? WHERE id = ?', text(ctx.body.name, { label: 'ชื่อ', max: 80, required: true }), u.id);
-  if (ctx.body.superadmin !== undefined) {
+  const b = ctx.body;
+  let name = b.name;
+  if (b.firstName !== undefined || b.lastName !== undefined) {
+    const first = text(b.firstName, { label: 'ชื่อ', max: 40, required: true });
+    const last = text(b.lastName, { label: 'นามสกุล', max: 40 });
+    name = last ? `${first} ${last}` : first;
+  }
+  const email = b.email !== undefined ? emailVal(b.email) : null;
+  const password = b.password ? passwordVal(b.password, 'รหัสผ่านใหม่') : null;
+  await tx(async () => {
+    if (name !== undefined) await run('UPDATE users SET name = ? WHERE id = ?', text(name, { label: 'ชื่อ', max: 80, required: true }), u.id);
+    if (email && email !== u.email) {
+      if (await get('SELECT 1 FROM users WHERE email = ? AND id <> ?', email, u.id)) throw new HttpError(409, `อีเมล ${email} มีบัญชีอื่นใช้อยู่แล้ว`);
+      await run('UPDATE users SET email = ? WHERE id = ?', email, u.id);
+    }
+    if (password) {
+      await run('UPDATE users SET pass = ? WHERE id = ?', hashPassword(password), u.id);
+      // ออกจากระบบทุกเครื่องของบัญชีนั้น (ถ้าเป็นบัญชีตัวเอง เก็บเครื่องนี้ไว้)
+      if (u.id === ctx.session.user_id) await run('DELETE FROM sessions WHERE user_id = ? AND token <> ?', u.id, ctx.session.token);
+      else await run('DELETE FROM sessions WHERE user_id = ?', u.id);
+    }
+  });
+  if (b.superadmin !== undefined) {
     const on = !!ctx.body.superadmin;
     if (!on && u.id === ctx.session.user_id) throw new HttpError(400, 'ไม่สามารถยกเลิกสิทธิ์ผู้ดูแลระบบของตัวเองได้');
     await run('UPDATE users SET is_superadmin = ? WHERE id = ?', on ? 1 : 0, u.id);

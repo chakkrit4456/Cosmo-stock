@@ -1823,45 +1823,74 @@
           if (pw) showCredentials('ตั้งรหัสผ่านใหม่แล้ว', m.email, pw);
         }));
         $('#invite', root).addEventListener('click', async () => {
+          // ร้าน/สาขาที่เชิญได้ (dropdown) — ค่าเริ่มต้นคือสาขาที่ใช้งานอยู่
+          let shops;
+          try { shops = (await GET('/api/invite-targets')).shops; } catch (e) { toast(e.message, 'err'); return; }
+          if (!shops.length) { toast('คุณไม่มีสิทธิ์เชิญผู้ใช้', 'err'); return; }
+          const cur = S.me.store;
+          const shopOf = (orgId) => shops.find((x) => x.orgId === Number(orgId)) || shops[0];
+          const startShop = shops.find((x) => x.orgId === cur.orgId) || shops[0];
           const res = await modal({
             title: 'เชิญผู้ใช้เข้าร้าน',
             wide: true,
-            body: `<div class="field"><label for="iv-em">อีเมล *</label><input class="input" id="iv-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
+            body: `<div style="display:flex;gap:10px;flex-wrap:wrap">
+                <div class="field" style="flex:1 1 200px"><label for="iv-shop">ร้าน *</label><select class="input" id="iv-shop">${shops.map((x) => `<option value="${x.orgId}" ${x.orgId === startShop.orgId ? 'selected' : ''}>${esc(x.orgName)}</option>`).join('')}</select></div>
+                <div class="field" style="flex:1 1 200px"><label for="iv-store">สาขา *</label><select class="input" id="iv-store"></select></div></div>
+              <div class="field"><label for="iv-em">อีเมล *</label><input class="input" id="iv-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
               <div class="field"><label for="iv-nm">ชื่อ-นามสกุล</label><input class="input" id="iv-nm" maxlength="80"></div>
-              <div class="field"><label for="iv-rl">บทบาท</label><select class="input" id="iv-rl">${roleOpts('staff')}</select>
+              <div class="field"><label for="iv-rl">บทบาท</label><select class="input" id="iv-rl"></select>
                 <div class="hint" id="iv-hint"></div></div>
-              ${multi ? `<div class="field" id="iv-br" hidden><label>สาขาที่ให้ดูแล</label><div class="stack" style="gap:4px">${d.stores.map((s) => `<label class="check"><input type="checkbox" value="${s.id}" ${s.id === S.me.store.id ? 'checked' : ''}>${esc(s.name)}</label>`).join('')}</div></div>` : ''}
+              <div class="field" id="iv-br" hidden><label>สาขาที่ให้ดูแล</label><div class="stack" style="gap:4px" id="iv-br-list"></div></div>
               <div class="field"><label for="iv-pw">รหัสผ่านเริ่มต้น</label><div style="display:flex;gap:8px"><input class="input" id="iv-pw" value="${genPassword()}" style="font-family:ui-monospace,monospace"><button type="button" class="btn btn-secondary" id="gen">สุ่มใหม่</button></div>
                 <div class="hint">ถ้าอีเมลนี้มีบัญชี CosmoStock อยู่แล้ว ระบบจะเพิ่มเข้าร้านโดยใช้รหัสผ่านเดิมของเขา</div></div>
               <div class="form-err" hidden></div>`,
             onMount(dlg) {
               $('#gen', dlg).addEventListener('click', () => { $('#iv-pw', dlg).value = genPassword(); });
-              const sync = () => {
-                const r = roleBy($('#iv-rl', dlg).value);
-                const hint = !r ? '' : r.scope === 'all' ? 'เห็นได้ทุกสาขาของร้านนี้'
-                  : r.scope === 'multi' ? (multi ? 'เห็นและจัดการได้เฉพาะสาขาที่เลือกด้านล่าง' : 'เห็นและจัดการได้เฉพาะสาขานี้')
-                    : `เข้าถึงได้เฉพาะสาขานี้ (${S.me.store.name}) เท่านั้น`;
-                $('#iv-hint', dlg).textContent = hint;
-                if ($('#iv-br', dlg)) $('#iv-br', dlg).hidden = r?.scope !== 'multi';
+              const shopSel = $('#iv-shop', dlg), storeSel = $('#iv-store', dlg), roleSel = $('#iv-rl', dlg);
+              const roleOf = () => shopOf(shopSel.value).roles.find((r) => r.key === roleSel.value);
+              const fillShop = (keepRole) => {
+                const shop = shopOf(shopSel.value);
+                storeSel.innerHTML = shop.stores.map((st) => `<option value="${st.id}" ${st.id === cur.id ? 'selected' : ''}>${esc(st.name)}</option>`).join('');
+                const want = keepRole && shop.roles.some((r) => r.key === keepRole) ? keepRole : (shop.roles.some((r) => r.key === 'staff') ? 'staff' : shop.roles[0]?.key);
+                roleSel.innerHTML = shop.roles.map((r) => `<option value="${esc(r.key)}" ${r.key === want ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+                fillBranches();
               };
-              $('#iv-rl', dlg).addEventListener('change', sync);
-              sync();
+              const fillBranches = () => {
+                const shop = shopOf(shopSel.value);
+                $('#iv-br-list', dlg).innerHTML = shop.stores.map((st) => `<label class="check"><input type="checkbox" value="${st.id}" ${String(st.id) === storeSel.value ? 'checked' : ''}>${esc(st.name)}</label>`).join('');
+                sync();
+              };
+              const sync = () => {
+                const r = roleOf();
+                const shop = shopOf(shopSel.value);
+                const branch = storeSel.selectedOptions[0]?.textContent || '';
+                $('#iv-hint', dlg).textContent = !r ? '' : r.scope === 'all' ? `เห็นได้ทุกสาขาของร้าน ${shop.orgName}`
+                  : r.scope === 'multi' ? 'เห็นและจัดการได้เฉพาะสาขาที่เลือกด้านล่าง'
+                    : `เข้าถึงได้เฉพาะ ${shop.orgName} · ${branch} เท่านั้น`;
+                $('#iv-br', dlg).hidden = r?.scope !== 'multi' || shop.stores.length < 2;
+              };
+              shopSel.addEventListener('change', () => fillShop(roleSel.value));
+              storeSel.addEventListener('change', fillBranches);
+              roleSel.addEventListener('change', sync);
+              fillShop('staff');
             },
             actions: [{ label: 'ยกเลิก' }, {
               label: ic('userplus') + 'เพิ่มเข้าร้าน', cls: 'btn-primary',
               onClick: async (dlg) => {
-                const body = { email: $('#iv-em', dlg).value, name: $('#iv-nm', dlg).value, role: $('#iv-rl', dlg).value, password: $('#iv-pw', dlg).value };
-                if (roleBy(body.role)?.scope === 'multi' && $('#iv-br', dlg)) {
-                  body.storeIds = $$('#iv-br input:checked', dlg).map((c) => Number(c.value));
+                const shop = shopOf($('#iv-shop', dlg).value);
+                const storeId = Number($('#iv-store', dlg).value);
+                const body = { storeId, email: $('#iv-em', dlg).value, name: $('#iv-nm', dlg).value, role: $('#iv-rl', dlg).value, password: $('#iv-pw', dlg).value };
+                if (shop.roles.find((r) => r.key === body.role)?.scope === 'multi' && !$('#iv-br', dlg).hidden) {
+                  body.storeIds = $$('#iv-br-list input:checked', dlg).map((c) => Number(c.value));
                   if (!body.storeIds.length) throw new Error('กรุณาเลือกอย่างน้อย 1 สาขา');
                 }
                 const r = await POST('/api/members', body);
-                return { ...body, created: r.created };
+                return { ...body, created: r.created, where: `${shop.orgName} · ${shop.stores.find((st) => st.id === storeId)?.name || ''}` };
               },
             }],
           });
           if (!res) return;
-          toast('เพิ่มผู้ใช้เข้าร้านแล้ว');
+          toast(`เพิ่มผู้ใช้เข้า ${res.where} แล้ว`);
           if (res.created) await showCredentials('สร้างบัญชีผู้ใช้แล้ว', res.email.trim().toLowerCase(), res.password);
           render();
         });
@@ -1952,6 +1981,7 @@
             <td data-label="เข้าใช้ล่าสุด" class="small">${u.lastLogin ? fmtDTY(u.lastLogin) : 'ยังไม่เคยเข้าใช้'}</td>
             <td class="acts" data-label="">
               ${u.id === me || u.superadmin ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-imp="${u.id}" title="สวมสิทธิ์ — เข้าใช้งานในฐานะผู้ใช้นี้" aria-label="สวมสิทธิ์ ${esc(u.name)}">${ic('eye')}</button>`}
+              <button type="button" class="btn btn-ghost btn-ico plain" data-edituser="${u.id}" title="แก้ไขข้อมูลบัญชี (ชื่อ อีเมล รหัสผ่าน)" aria-label="แก้ไขบัญชี ${esc(u.name)}">${ic('edit')}</button>
               <button type="button" class="btn btn-ghost btn-ico plain" data-pw="${u.id}" title="ตั้งรหัสผ่านใหม่">${ic('key')}</button>
               ${u.id === me ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-sa="${u.id}" title="${u.superadmin ? 'ยกเลิกสิทธิ์ผู้ดูแลระบบ' : 'ตั้งเป็นผู้ดูแลระบบ'}">${ic(u.superadmin ? 'x' : 'settings')}</button>
               <button type="button" class="btn btn-ghost btn-ico plain" data-deluser="${u.id}" title="ลบบัญชี">${ic('trash')}</button>`}
@@ -2018,6 +2048,34 @@
             toast(`กำลังใช้งานในฐานะ ${u.name}`);
             go('/');
           } catch (e) { toast(e.message, 'err'); }
+        }));
+        $$('[data-edituser]', root).forEach((b) => b.addEventListener('click', async () => {
+          const u = user(b.dataset.edituser);
+          const sp = u.name.trim().indexOf(' ');
+          const [first, last] = sp > 0 ? [u.name.slice(0, sp), u.name.slice(sp + 1).trim()] : [u.name, ''];
+          const res = await modal({
+            title: `แก้ไขบัญชี ${u.name}`,
+            body: `<div style="display:flex;gap:10px;flex-wrap:wrap">
+                <div class="field" style="flex:1 1 160px"><label for="eu-fn">ชื่อ *</label><input class="input" id="eu-fn" maxlength="40" value="${esc(first)}"></div>
+                <div class="field" style="flex:1 1 160px"><label for="eu-ln">นามสกุล</label><input class="input" id="eu-ln" maxlength="40" value="${esc(last)}"></div></div>
+              <div class="field"><label for="eu-em">อีเมล (ใช้เข้าสู่ระบบ) *</label><input class="input" id="eu-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false" value="${esc(u.email)}"></div>
+              <div class="field"><label for="eu-pw">รหัสผ่านใหม่</label><div style="display:flex;gap:8px"><input class="input" id="eu-pw" autocomplete="new-password" placeholder="เว้นว่าง = ไม่เปลี่ยนรหัสผ่าน" style="font-family:ui-monospace,monospace"><button type="button" class="btn btn-secondary" data-genpw>สุ่ม</button></div>
+                <div class="hint">อย่างน้อย 8 ตัวอักษร — ถ้าเปลี่ยน ${u.id === me ? 'อุปกรณ์อื่นของคุณ' : 'ผู้ใช้'}จะถูกออกจากระบบทุกอุปกรณ์</div></div>
+              <div class="form-err" hidden></div>`,
+            onMount(dlg) { $('[data-genpw]', dlg).addEventListener('click', () => { $('#eu-pw', dlg).value = genPassword(); }); },
+            actions: [{ label: 'ยกเลิก' }, {
+              label: 'บันทึก', cls: 'btn-primary', onClick: async (dlg) => {
+                const body = { firstName: $('#eu-fn', dlg).value, lastName: $('#eu-ln', dlg).value, email: $('#eu-em', dlg).value, password: $('#eu-pw', dlg).value };
+                await PUT(`/api/sys/users/${u.id}`, body);
+                return body;
+              },
+            }],
+          });
+          if (!res) return;
+          if (u.id === me) await refreshMe();
+          if (res.password) await showCredentials('บันทึกข้อมูลบัญชีแล้ว', res.email.trim().toLowerCase(), res.password);
+          else toast('บันทึกข้อมูลบัญชีแล้ว');
+          render();
         }));
         $$('[data-pw]', root).forEach((b) => b.addEventListener('click', async () => {
           const u = user(b.dataset.pw);
