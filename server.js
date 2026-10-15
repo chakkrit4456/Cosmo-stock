@@ -40,8 +40,8 @@ const ROLES = Object.fromEntries(DEFAULT_ROLES.map((r) => [r.key, r.name]));
 const SCOPE_LABEL = {
   all: 'ทุกสาขาของร้าน',
   stores: 'เฉพาะสาขาที่เลือก',
-  multi: 'เลือกให้แต่ละคน (ได้หลายสาขา)',
-  single: 'เลือกให้แต่ละคน (คนละ 1 สาขา)',
+  multi: 'ได้หลายสาขา',
+  single: 'คนละ 1 สาขา',
 };
 const FIXED_SCOPES = ['all', 'stores'];
 const DEFAULT_CATEGORIES = ['สกินแคร์', 'เมคอัพ', 'บำรุงผิว', 'กันแดด', 'คลีนซิ่ง'];
@@ -1178,20 +1178,43 @@ async function roleOf(ctx) {
   return role;
 }
 
+// เพิ่มบทบาท — ไม่ระบุ targets = ร้านปัจจุบัน (scope ตามที่ส่งมา)
+// targets = [{ orgId, all: true } | { orgId, storeIds }] สร้างบทบาทเดียวกันในหลายร้าน/หลายสาขาพร้อมกัน
 api('POST', '/api/roles', { perm: 'users' }, async (ctx) => {
   const name = text(ctx.body.name, { label: 'ชื่อบทบาท', max: 40, required: true });
-  const scope = scopeVal(ctx.body.scope || 'single');
-  const storeIds = scope === 'stores' ? await branchIds(ctx, ctx.body.storeIds || []) : null;
   const perms = permList(ctx.body.perms || []);
-  if (await get('SELECT 1 FROM org_roles WHERE org_id = ? AND lower(name) = lower(?)', ctx.orgId, name)) throw new HttpError(409, 'มีบทบาทชื่อนี้อยู่แล้ว');
+  let plan;
+  if (Array.isArray(ctx.body.targets)) {
+    if (!ctx.body.targets.length) throw new HttpError(400, 'กรุณาเลือกร้านหรือสาขาอย่างน้อย 1 แห่ง');
+    const manageable = new Set();
+    for (const s of await accessibleStores(ctx.session.user_id)) if (await can(s.role, 'users', s.orgId)) manageable.add(s.orgId);
+    plan = [];
+    for (const t of ctx.body.targets) {
+      const orgId = Number(t?.orgId) || 0;
+      if (!manageable.has(orgId)) throw new HttpError(403, 'คุณไม่มีสิทธิ์จัดการบทบาทของร้านที่เลือก');
+      if (plan.some((p) => p.orgId === orgId)) throw new HttpError(400, 'เลือกร้านซ้ำ');
+      plan.push(t.all ? { orgId, scope: 'all', storeIds: null } : { orgId, scope: 'stores', storeIds: await branchIds({ orgId }, t.storeIds || []) });
+    }
+  } else {
+    const scope = scopeVal(ctx.body.scope || 'single');
+    plan = [{ orgId: ctx.orgId, scope, storeIds: scope === 'stores' ? await branchIds(ctx, ctx.body.storeIds || []) : null }];
+  }
+  for (const p of plan) {
+    if (await get('SELECT 1 FROM org_roles WHERE org_id = ? AND lower(name) = lower(?)', p.orgId, name)) {
+      const org = await get('SELECT name FROM orgs WHERE id = ?', p.orgId);
+      throw new HttpError(409, `ร้าน ${org?.name || ''} มีบทบาทชื่อนี้อยู่แล้ว`);
+    }
+  }
   const key = `c${crypto.randomBytes(4).toString('hex')}`;
-  const sort = ((await get('SELECT COALESCE(MAX(sort), 0) AS n FROM org_roles WHERE org_id = ?', ctx.orgId))?.n || 0) + 1;
   await tx(async () => {
-    await run('INSERT INTO org_roles(org_id, key, name, scope, builtin, sort) VALUES (?, ?, ?, ?, 0, ?)', ctx.orgId, key, name, scope, sort);
-    for (const p of perms) await run('INSERT INTO org_role_perms(org_id, role_key, perm) VALUES (?, ?, ?)', ctx.orgId, key, p);
-    await setRoleStores(ctx.orgId, key, storeIds);
+    for (const p of plan) {
+      const sort = ((await get('SELECT COALESCE(MAX(sort), 0) AS n FROM org_roles WHERE org_id = ?', p.orgId))?.n || 0) + 1;
+      await run('INSERT INTO org_roles(org_id, key, name, scope, builtin, sort) VALUES (?, ?, ?, ?, 0, ?)', p.orgId, key, name, p.scope, sort);
+      for (const perm of perms) await run('INSERT INTO org_role_perms(org_id, role_key, perm) VALUES (?, ?, ?)', p.orgId, key, perm);
+      await setRoleStores(p.orgId, key, p.storeIds);
+    }
   });
-  return { ok: true, key };
+  return { ok: true, key, shops: plan.length };
 });
 
 api('PUT', '/api/roles/:key', { perm: 'users' }, async (ctx) => {

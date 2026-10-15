@@ -1730,9 +1730,9 @@
           ${ids.length > 1 ? opt('stores', `สาขา ${ids.map(storeName).join(', ')}`, true) : ''}
           ${multi ? opt('pick', 'เลือกหลายสาขา…', false) : ''}
         </optgroup>
-        <optgroup label="เลือกสาขาให้แต่ละคน (ที่รายชื่อผู้ใช้ด้านบน)">
-          ${opt('multi', 'รายคน — ได้หลายสาขา', r.scope === 'multi')}
-          ${opt('single', 'รายคน — คนละ 1 สาขา', r.scope === 'single')}
+        <optgroup label="ไม่ระบุสาขา (กำหนดที่รายชื่อผู้ใช้ด้านบน)">
+          ${opt('single', 'คนละ 1 สาขา', r.scope === 'single')}
+          ${opt('multi', 'ได้หลายสาขา', r.scope === 'multi')}
         </optgroup></select>`;
     };
     const branchCell = (m) => {
@@ -1857,12 +1857,11 @@
             wide: true,
             body: `<div style="display:flex;gap:10px;flex-wrap:wrap">
                 <div class="field" style="flex:1 1 200px"><label for="iv-shop">ร้าน *</label><select class="input" id="iv-shop">${shops.map((x) => `<option value="${x.orgId}" ${x.orgId === startShop.orgId ? 'selected' : ''}>${esc(x.orgName)}</option>`).join('')}</select></div>
-                <div class="field" style="flex:1 1 200px"><label for="iv-store">สาขา *</label><select class="input" id="iv-store"></select></div></div>
+                <div class="field" style="flex:1 1 200px" id="iv-store-f"><label for="iv-store">สาขา *</label><select class="input" id="iv-store"></select></div></div>
               <div class="field"><label for="iv-em">อีเมล *</label><input class="input" id="iv-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
               <div class="field"><label for="iv-nm">ชื่อ-นามสกุล</label><input class="input" id="iv-nm" maxlength="80"></div>
               <div class="field"><label for="iv-rl">บทบาท</label><select class="input" id="iv-rl"></select>
                 <div class="hint" id="iv-hint"></div></div>
-              <div class="field" id="iv-br" hidden><label>สาขาที่ให้ดูแล</label><div class="stack" style="gap:4px" id="iv-br-list"></div></div>
               <div class="field"><label for="iv-pw">รหัสผ่านเริ่มต้น</label><div style="display:flex;gap:8px"><input class="input" id="iv-pw" value="${genPassword()}" style="font-family:ui-monospace,monospace"><button type="button" class="btn btn-secondary" id="gen">สุ่มใหม่</button></div>
                 <div class="hint">ถ้าอีเมลนี้มีบัญชี CosmoStock อยู่แล้ว ระบบจะเพิ่มเข้าร้านโดยใช้รหัสผ่านเดิมของเขา</div></div>
               <div class="form-err" hidden></div>`,
@@ -1875,11 +1874,6 @@
                 storeSel.innerHTML = shop.stores.map((st) => `<option value="${st.id}" ${st.id === cur.id ? 'selected' : ''}>${esc(st.name)}</option>`).join('');
                 const want = keepRole && shop.roles.some((r) => r.key === keepRole) ? keepRole : (shop.roles.some((r) => r.key === 'staff') ? 'staff' : shop.roles[0]?.key);
                 roleSel.innerHTML = shop.roles.map((r) => `<option value="${esc(r.key)}" ${r.key === want ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
-                fillBranches();
-              };
-              const fillBranches = () => {
-                const shop = shopOf(shopSel.value);
-                $('#iv-br-list', dlg).innerHTML = shop.stores.map((st) => `<label class="check"><input type="checkbox" value="${st.id}" ${String(st.id) === storeSel.value ? 'checked' : ''}>${esc(st.name)}</label>`).join('');
                 sync();
               };
               const sync = () => {
@@ -1888,12 +1882,13 @@
                 const branch = storeSel.selectedOptions[0]?.textContent || '';
                 $('#iv-hint', dlg).textContent = !r ? '' : r.scope === 'all' ? `เห็นได้ทุกสาขาของร้าน ${shop.orgName}`
                   : r.scope === 'stores' ? `เข้าถึงได้เฉพาะสาขาที่บทบาทนี้กำหนด: ${r.storeIds.map((id) => shop.stores.find((st) => st.id === id)?.name || `#${id}`).join(', ') || '(ยังไม่ได้เลือกสาขา)'}`
-                  : r.scope === 'multi' ? 'เห็นและจัดการได้เฉพาะสาขาที่เลือกด้านล่าง'
+                  : r.scope === 'multi' ? `เริ่มที่ ${shop.orgName} · ${branch} — เพิ่มสาขาอื่นภายหลังได้ที่ปุ่ม "กำหนดสาขา" ในรายชื่อผู้ใช้`
                     : `เข้าถึงได้เฉพาะ ${shop.orgName} · ${branch} เท่านั้น`;
-                $('#iv-br', dlg).hidden = r?.scope !== 'multi' || shop.stores.length < 2;
+                // บทบาทที่กำหนดสาขาไว้แล้ว ไม่ต้องเลือกสาขาซ้ำ
+                $('#iv-store-f', dlg).hidden = ['all', 'stores'].includes(r?.scope);
               };
               shopSel.addEventListener('change', () => fillShop(roleSel.value));
-              storeSel.addEventListener('change', fillBranches);
+              storeSel.addEventListener('change', sync);
               roleSel.addEventListener('change', sync);
               fillShop('staff');
             },
@@ -1901,14 +1896,14 @@
               label: ic('userplus') + 'เพิ่มเข้าร้าน', cls: 'btn-primary',
               onClick: async (dlg) => {
                 const shop = shopOf($('#iv-shop', dlg).value);
-                const storeId = Number($('#iv-store', dlg).value);
-                const body = { storeId, email: $('#iv-em', dlg).value, name: $('#iv-nm', dlg).value, role: $('#iv-rl', dlg).value, password: $('#iv-pw', dlg).value };
-                if (shop.roles.find((r) => r.key === body.role)?.scope === 'multi' && !$('#iv-br', dlg).hidden) {
-                  body.storeIds = $$('#iv-br-list input:checked', dlg).map((c) => Number(c.value));
-                  if (!body.storeIds.length) throw new Error('กรุณาเลือกอย่างน้อย 1 สาขา');
-                }
+                const role = shop.roles.find((r) => r.key === $('#iv-rl', dlg).value);
+                const fixed = ['all', 'stores'].includes(role?.scope);
+                // บทบาทที่กำหนดสาขาไว้: ใช้สาขาแรกของบทบาท (ระบบเพิ่มสาขาที่เหลือให้เอง)
+                const storeId = fixed ? (shop.stores.find((st) => role.scope === 'all' || role.storeIds.includes(st.id)) || shop.stores[0]).id : Number($('#iv-store', dlg).value);
+                const body = { storeId, email: $('#iv-em', dlg).value, name: $('#iv-nm', dlg).value, role: role?.key, password: $('#iv-pw', dlg).value };
+                if (role?.scope === 'multi') body.storeIds = [storeId];
                 const r = await POST('/api/members', body);
-                return { ...body, created: r.created, where: `${shop.orgName} · ${shop.stores.find((st) => st.id === storeId)?.name || ''}` };
+                return { ...body, created: r.created, where: fixed ? shop.orgName : `${shop.orgName} · ${shop.stores.find((st) => st.id === storeId)?.name || ''}` };
               },
             }],
           });
@@ -1919,31 +1914,60 @@
         });
         const permBoxes = (dlg) => d.permissions.map((p) => `<label class="check"><input type="checkbox" value="${esc(p.key)}">${esc(p.label)}</label>`).join('');
         $('#add-role', root).addEventListener('click', async () => {
+          // ร้าน/สาขาที่จัดการได้ทั้งหมด — สร้างบทบาทเดียวกันในหลายร้านได้
+          let shops;
+          try { shops = (await GET('/api/invite-targets')).shops; } catch (e) { toast(e.message, 'err'); return; }
+          if (!shops.some((x) => x.orgId === S.me.store.orgId)) shops.unshift({ orgId: S.me.store.orgId, orgName: shopName, stores: d.stores });
+          const many = shops.length > 1;
+          const opt = (v, label, sel) => `<option value="${v}" ${sel ? 'selected' : ''}>${esc(label)}</option>`;
           const ok = await modal({
             title: 'เพิ่มบทบาท',
             body: `<div class="field"><label for="rl-nm">ชื่อบทบาท *</label><input class="input" id="rl-nm" maxlength="40" placeholder="เช่น แคชเชียร์"></div>
-              <div class="field"><label for="rl-sc">สาขาที่เข้าถึงได้</label><select class="input" id="rl-sc">
-                <option value="all">ทุกสาขาของร้าน ${esc(shopName)} (${d.stores.length} สาขา)</option>
-                <option value="stores">เฉพาะสาขาที่เลือก (ทุกคนในบทบาทนี้)</option>
-                <option value="multi">เลือกสาขาให้แต่ละคน — ได้หลายสาขา</option>
-                <option value="single" selected>เลือกสาขาให้แต่ละคน — คนละ 1 สาขา</option></select>
-                <div class="stack" id="rl-st" style="gap:4px;margin-top:6px" hidden>${d.stores.map((s) => `<label class="check"><input type="checkbox" name="rl-st" value="${s.id}" ${s.id === S.me.store.id ? 'checked' : ''}>${esc(s.name)}</label>`).join('')}</div></div>
-              <div class="field"><label>สิทธิ์</label><div class="stack" style="gap:4px">${permBoxes()}</div></div>
+              <div class="field"><label for="rl-sc">ร้าน / สาขาที่เข้าถึงได้</label><select class="input" id="rl-sc">
+                <optgroup label="ไม่ระบุ (กำหนดสาขาที่รายชื่อผู้ใช้ — ร้าน ${esc(shopName)})">${opt('none:single', 'คนละ 1 สาขา', true)}${opt('none:multi', 'ได้หลายสาขา')}</optgroup>
+                ${many ? `<optgroup label="ทั้งหมด">${opt('everything', `ทุกร้าน ทุกสาขา (${shops.length} ร้าน)`)}</optgroup>` : ''}
+                <optgroup label="ทั้งร้าน (ทุกสาขาของร้าน)">${shops.map((x) => opt(`shop:${x.orgId}`, `ร้าน ${x.orgName} (${x.stores.length} สาขา)`)).join('')}</optgroup>
+                <optgroup label="สาขาเดียว">${shops.flatMap((x) => x.stores.map((st) => opt(`store:${x.orgId}:${st.id}`, many ? `${x.orgName} · ${st.name}` : `สาขา ${st.name}`))).join('')}</optgroup>
+                <optgroup label="หลายแห่ง">${opt('custom', many ? 'เลือกหลายร้าน / หลายสาขา…' : 'เลือกหลายสาขา…')}</optgroup></select>
+                <div class="hint" id="rl-hint"></div>
+                <div class="stack" id="rl-st" style="gap:4px;margin-top:6px" hidden>${shops.map((x) => `<div>
+                  <label class="check"><input type="checkbox" data-rshop="${x.orgId}"><b>ร้าน ${esc(x.orgName)} — ทุกสาขา</b></label>
+                  <div class="stack" style="gap:4px;padding-left:28px">${x.stores.map((st) => `<label class="check"><input type="checkbox" data-rorg="${x.orgId}" value="${st.id}">${esc(st.name)}</label>`).join('')}</div></div>`).join('')}</div></div>
+              <div class="field"><label>สิทธิ์</label><div class="stack" style="gap:4px" id="rl-perms">${permBoxes()}</div></div>
               <div class="form-err" hidden></div>`,
-            onMount(dlg) { $('#rl-sc', dlg).addEventListener('change', (e) => { $('#rl-st', dlg).hidden = e.target.value !== 'stores'; }); },
+            onMount(dlg) {
+              const sel = $('#rl-sc', dlg);
+              const sync = () => {
+                const v = sel.value;
+                $('#rl-st', dlg).hidden = v !== 'custom';
+                $('#rl-hint', dlg).textContent = v.startsWith('none:') ? 'ยังไม่ผูกสาขา — เลือกสาขาให้แต่ละคนภายหลังที่รายชื่อผู้ใช้'
+                  : v === 'custom' ? 'ติ๊กทั้งร้าน หรือเฉพาะบางสาขา — ทุกคนในบทบาทนี้จะเข้าได้เฉพาะที่เลือก'
+                    : 'ทุกคนในบทบาทนี้จะเข้าได้เฉพาะที่เลือก';
+              };
+              sel.addEventListener('change', sync);
+              // ติ๊กทั้งร้าน = ทุกสาขาของร้านนั้น
+              $$('[data-rshop]', dlg).forEach((c) => c.addEventListener('change', () => {
+                $$(`[data-rorg="${c.dataset.rshop}"]`, dlg).forEach((b) => { b.checked = c.checked; b.disabled = c.checked; });
+              }));
+              sync();
+            },
             actions: [{ label: 'ยกเลิก' }, { label: 'เพิ่มบทบาท', cls: 'btn-primary', onClick: (dlg) => {
-              const scope = $('#rl-sc', dlg).value;
-              const storeIds = $$('input[name=rl-st]:checked', dlg).map((c) => Number(c.value));
-              if (scope === 'stores' && !storeIds.length) throw new Error('กรุณาเลือกอย่างน้อย 1 สาขา');
-              return POST('/api/roles', {
-                name: $('#rl-nm', dlg).value,
-                scope,
-                storeIds: scope === 'stores' ? storeIds : undefined,
-                perms: $$('.stack:not(#rl-st) input[type=checkbox]:checked', dlg).map((c) => c.value),
-              });
+              const v = $('#rl-sc', dlg).value;
+              const body = { name: $('#rl-nm', dlg).value, perms: $$('#rl-perms input:checked', dlg).map((c) => c.value) };
+              if (v.startsWith('none:')) body.scope = v.slice(5);
+              else if (v === 'everything') body.targets = shops.map((x) => ({ orgId: x.orgId, all: true }));
+              else if (v.startsWith('shop:')) body.targets = [{ orgId: Number(v.slice(5)), all: true }];
+              else if (v.startsWith('store:')) { const [, o, st] = v.split(':'); body.targets = [{ orgId: Number(o), storeIds: [Number(st)] }]; }
+              else {
+                body.targets = shops.map((x) => ($(`[data-rshop="${x.orgId}"]`, dlg).checked ? { orgId: x.orgId, all: true }
+                  : { orgId: x.orgId, storeIds: $$(`[data-rorg="${x.orgId}"]:checked`, dlg).map((c) => Number(c.value)) }))
+                  .filter((t) => t.all || t.storeIds.length);
+                if (!body.targets.length) throw new Error('กรุณาเลือกร้านหรือสาขาอย่างน้อย 1 แห่ง');
+              }
+              return POST('/api/roles', body);
             } }],
           });
-          if (ok) { toast('เพิ่มบทบาทแล้ว'); render(); }
+          if (ok) { toast(ok.shops > 1 ? `เพิ่มบทบาทใน ${ok.shops} ร้านแล้ว` : 'เพิ่มบทบาทแล้ว'); render(); }
         });
         $$('[data-rename]', root).forEach((b) => b.addEventListener('click', async () => {
           const r = roleBy(b.dataset.rename);
