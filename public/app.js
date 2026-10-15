@@ -466,6 +466,25 @@
 
   // ───────────────────────── shell ─────────────────────────
 
+  // ชื่อเต็มของสาขา: "ร้าน · สาขา" (สาขาอยู่ภายใต้ร้านเสมอ)
+  const storeLabel = (s) => (s ? (s.orgName ? `${s.orgName} · ${s.name}` : s.name) : '');
+
+  function impBar() {
+    const by = S.me?.user.impersonatedBy;
+    return by ? `<div class="imp-bar" role="status">${ic('eye', 18)}<span>กำลังสวมสิทธิ์เป็น <b>${esc(S.me.user.name)}</b> (${esc(S.me.user.email)}) — ทุกรายการที่บันทึกจะระบุว่าทำโดยผู้ดูแลระบบ (${esc(by.email)})</span>
+      <button type="button" class="btn btn-secondary" data-act="unimp">กลับเป็นผู้ดูแลระบบ</button></div>` : '';
+  }
+
+  async function stopImpersonating() {
+    try {
+      await POST('/api/auth/impersonate/stop');
+      S.shellKey = '';
+      await loadMe();
+      toast('กลับเป็นผู้ดูแลระบบแล้ว');
+      go(S.me?.user.superadmin ? '/system' : '/');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
   const shellKey = () => (S.me?.store ? `${S.me.user.id}|${S.me.store.id}|${S.me.store.role}` : '');
 
   function navItems() {
@@ -507,6 +526,7 @@
         </div>
       </aside>
       <div class="content">
+        ${impBar()}
         <header class="top">
           <img class="brand-mark" src="/logo-192.png" alt="" style="width:32px;height:32px">
           <button type="button" class="btn store-pick" data-act="store"><span class="t1">CosmoStock</span><span class="t2"><span data-bind="store"></span>${ic('down', 14)}</span></button>
@@ -524,7 +544,7 @@
   function updateShellBits() {
     const { user, store } = S.me;
     const count = store.alertCount;
-    $$('[data-bind=store]').forEach((e) => { e.textContent = store.name; });
+    $$('[data-bind=store]').forEach((e) => { e.textContent = storeLabel(store); });
     $$('[data-bind=user]').forEach((e) => { e.textContent = user.name; });
     $$('[data-bind=role]').forEach((e) => { e.textContent = user.superadmin ? 'ผู้ดูแลระบบ' : store.roleLabel; });
     $$('[data-bind=initial]').forEach((e) => { e.textContent = initial(user.name); });
@@ -556,7 +576,7 @@
     if (!id || id === store.id) return;
     try {
       S.me = await POST('/api/me/store', { storeId: id });
-      toast('สลับไปที่ ' + S.me.store.name);
+      toast('สลับไปที่ ' + storeLabel(S.me.store));
       go('/');
     } catch (e) { toast(e.message, 'err'); }
   }
@@ -602,7 +622,7 @@
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${sl ? `<span class="tag tag-accent">${ic('scan', 14)} สแกนได้: ล็อต ${esc(sl.lotNo || '-')}${sl.expiry ? ` · หมดอายุ ${fmtD(sl.expiry)}` : ''}</span>` : mp ? `<span class="tag tag-accent">${ic('scan', 14)} สแกนได้: ${esc(mp.name)} (${fmtN(mp.perQty)} ${esc(p.unit)})</span>` : `<span class="tag">${ic('scan', 14)} สแกนได้: ${esc(p.unit)}</span>`}${stTag(p.status)}</div>
         </div></div>
         <div class="sr-stock blueprint">${CORNERS}
-          <div class="small muted">คงเหลือที่ ${esc(S.me.store.name)}</div>
+          <div class="small muted">คงเหลือที่ ${esc(storeLabel(S.me.store))}</div>
           <div class="balance" style="font-size:40px">${fmtN(p.qty)} <small style="font-size:16px">${esc(p.unit)}</small></div>
           ${breakdown ? `<div><b>${esc(breakdown)}</b></div>` : ''}
           ${sl ? `<div class="small"><b>ล็อตนี้คงเหลือ ${fmtN(sl.qty)} ${esc(p.unit)}</b>${sl.days != null && sl.days < 0 ? ' · <span style="color:var(--color-accent-700)">หมดอายุแล้ว</span>' : ''}${!sl.id ? ' · ยังไม่เคยรับเข้าล็อตนี้' : ''}</div>` : ''}
@@ -629,6 +649,7 @@
     const act = t.dataset.act;
     if (act === 'store') { e.preventDefault(); switchStore(); }
     else if (act === 'logout') { e.preventDefault(); logout(); }
+    else if (act === 'unimp') { e.preventDefault(); stopImpersonating(); }
     else if (act === 'scan') { e.preventDefault(); globalScan(); }
   });
 
@@ -638,13 +659,15 @@
       <div class="card-kicker">ยังไม่มีร้าน</div>
       <div class="card-title">สวัสดี ${esc(S.me.user.name)}</div>
       <div class="dialog-body">บัญชีของคุณยังไม่ได้อยู่ในร้านใด ขอให้เจ้าของร้านเชิญคุณเข้าร้าน หรือสร้างร้านใหม่ของคุณเอง</div>
-      <div class="field"><label for="sn">ชื่อร้านใหม่</label><input class="input" id="sn" name="name" required maxlength="80" placeholder="เช่น Rose Beauty · สาขาสยาม"></div>
+      <div class="field"><label for="sn">ชื่อร้านใหม่</label><input class="input" id="sn" name="shopName" required maxlength="60" placeholder="เช่น Rose Beauty"></div>
+      <div class="field"><label for="sb">ชื่อสาขาแรก</label><input class="input" id="sb" name="name" maxlength="60" placeholder="เว้นว่าง = สาขาหลัก"></div>
       <div class="form-err" hidden></div>
       <button class="btn btn-primary blueprint" type="submit" style="min-height:48px">${CORNERS}สร้างร้าน</button>
       <button class="btn btn-secondary" type="button" data-act="logout">${ic('logout')}ออกจากระบบ</button>
+      ${S.me.user.impersonatedBy ? `<button class="btn btn-secondary" type="button" data-act="unimp">${ic('eye')}กลับเป็นผู้ดูแลระบบ</button>` : ''}
     </form>`);
     onSubmit($('#f'), async (d) => {
-      S.me = await POST('/api/stores', { kind: 'shop', name: d.name });
+      S.me = await POST('/api/stores', { kind: 'shop', shopName: d.shopName, name: d.name });
       go('/');
     });
   }
@@ -713,7 +736,9 @@
     return {
       html: authLayout(`<form class="card blueprint auth-card" id="f" novalidate>${CORNERS}
         ${authTabs('register')}
-        <div class="field"><label for="sn">ชื่อร้าน *</label><input class="input" id="sn" name="storeName" required maxlength="80" placeholder="เช่น Rose Beauty · สาขาสยาม"></div>
+        <div class="field"><label for="sn">ชื่อร้าน *</label><input class="input" id="sn" name="shopName" required maxlength="60" placeholder="เช่น Rose Beauty"></div>
+        <div class="field"><label for="sb">ชื่อสาขาแรก</label><input class="input" id="sb" name="branchName" maxlength="60" placeholder="เช่น สาขาสยาม (เว้นว่าง = สาขาหลัก)">
+          <div class="hint">เพิ่มสาขาอื่นภายใต้ร้านนี้ได้ภายหลังที่หน้า ตั้งค่า</div></div>
         <div class="field"><label for="nm">ชื่อของคุณ *</label><input class="input" id="nm" name="name" required maxlength="80" autocomplete="name"></div>
         <div class="field"><label for="em">อีเมล *</label><input class="input" id="em" name="email" type="email" inputmode="email" autocomplete="email" required autocapitalize="none" spellcheck="false"></div>
         ${pwField('pw', 'password', 'รหัสผ่าน * (อย่างน้อย 8 ตัวอักษร)', 'new-password')}
@@ -1198,7 +1223,7 @@
     }
     return {
       html: `<div class="page narrow">
-        <div class="page-head"><div class="ttl"><h2>${T.title}</h2><div class="sub">บันทึกการเคลื่อนไหวสต็อก · ${esc(S.me.store.name)}</div></div></div>
+        <div class="page-head"><div class="ttl"><h2>${T.title}</h2><div class="sub">บันทึกการเคลื่อนไหวสต็อก · ${esc(storeLabel(S.me.store))}</div></div></div>
         <div class="seg" id="tabs"></div>
         <form id="mf" class="stack" novalidate autocomplete="off">
           <div class="field"><label>สินค้า *</label><div id="pick"></div></div>
@@ -1611,7 +1636,7 @@
     return {
       html: `<div class="page">
         <div class="page-head">
-          <div class="ttl"><h2>รายงาน</h2><div class="sub">${esc(S.me.store.name)} · <span id="rng"></span></div></div>
+          <div class="ttl"><h2>รายงาน</h2><div class="sub">${esc(storeLabel(S.me.store))} · <span id="rng"></span></div></div>
           <div class="acts no-print">
             <button type="button" class="btn btn-secondary" id="pdf">${ic('file')}PDF / พิมพ์</button>
             <button type="button" class="btn btn-primary blueprint" id="csv">${CORNERS}${ic('download')}ส่งออก Excel (CSV)</button>
@@ -1881,7 +1906,7 @@
     const pwInput = (id) => `<div style="display:flex;gap:8px"><input class="input" id="${id}" value="${genPassword()}" style="font-family:ui-monospace,monospace"><button type="button" class="btn btn-secondary" data-gen="${id}">สุ่มใหม่</button></div>`;
     const bindGen = (dlg) => $$('[data-gen]', dlg).forEach((b) => b.addEventListener('click', () => { $('#' + b.dataset.gen, dlg).value = genPassword(); }));
     const switchTo = async (storeId) => {
-      try { S.me = await POST('/api/me/store', { storeId }); toast('สลับไปที่ ' + S.me.store.name); go('/'); } catch (e) { toast(e.message, 'err'); }
+      try { S.me = await POST('/api/me/store', { storeId }); toast('สลับไปที่ ' + storeLabel(S.me.store)); go('/'); } catch (e) { toast(e.message, 'err'); }
     };
     const accessCell = (u) => u.superadmin ? '<span class="tag tag-accent">ทุกร้าน ทุกสาขา</span>' : u.access.length
       ? u.access.map((a) => `<div class="small"><b>${esc(a.shop)}</b> · ${esc(a.store)} <span class="muted">(${esc(a.roleLabel)})</span></div>`).join('')
@@ -1914,6 +1939,7 @@
             <td data-label="สิทธิ์">${accessCell(u)}</td>
             <td data-label="เข้าใช้ล่าสุด" class="small">${u.lastLogin ? fmtDTY(u.lastLogin) : 'ยังไม่เคยเข้าใช้'}</td>
             <td class="acts" data-label="">
+              ${u.id === me || u.superadmin ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-imp="${u.id}" title="สวมสิทธิ์ — เข้าใช้งานในฐานะผู้ใช้นี้" aria-label="สวมสิทธิ์ ${esc(u.name)}">${ic('eye')}</button>`}
               <button type="button" class="btn btn-ghost btn-ico plain" data-pw="${u.id}" title="ตั้งรหัสผ่านใหม่">${ic('key')}</button>
               ${u.id === me ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-sa="${u.id}" title="${u.superadmin ? 'ยกเลิกสิทธิ์ผู้ดูแลระบบ' : 'ตั้งเป็นผู้ดูแลระบบ'}">${ic(u.superadmin ? 'x' : 'settings')}</button>
               <button type="button" class="btn btn-ghost btn-ico plain" data-deluser="${u.id}" title="ลบบัญชี">${ic('trash')}</button>`}
@@ -1928,7 +1954,7 @@
             title: 'สร้างร้านใหม่',
             wide: true,
             body: `<div class="field"><label for="o-nm">ชื่อร้าน *</label><input class="input" id="o-nm" maxlength="60" placeholder="เช่น Lily Cosmetics"></div>
-              <div class="field"><label for="o-br">ชื่อสาขาแรก</label><input class="input" id="o-br" maxlength="80" placeholder="เว้นว่าง = ชื่อร้าน · สาขาหลัก"></div>
+              <div class="field"><label for="o-br">ชื่อสาขาแรก</label><input class="input" id="o-br" maxlength="80" placeholder="เว้นว่าง = สาขาหลัก"></div>
               <div class="field"><label for="o-em">อีเมลเจ้าของร้าน *</label><input class="input" id="o-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false">
                 <div class="hint">ถ้าอีเมลนี้มีบัญชีอยู่แล้ว จะตั้งเป็นเจ้าของร้านใหม่โดยใช้รหัสผ่านเดิม</div></div>
               <div class="field"><label for="o-on">ชื่อเจ้าของร้าน (กรณีบัญชีใหม่)</label><input class="input" id="o-on" maxlength="80"></div>
@@ -1969,6 +1995,17 @@
           await refreshMe();
           render();
         }));
+        $$('[data-imp]', root).forEach((b) => b.addEventListener('click', async () => {
+          const u = user(b.dataset.imp);
+          if (!await confirmBox(`สวมสิทธิ์เป็น ${u.name}?`, `คุณจะเห็นและทำได้<b>เท่าที่ ${esc(u.name)} ทำได้</b>เท่านั้น รายการที่บันทึกจะระบุว่าทำโดยผู้ดูแลระบบ<br>กด <b>กลับเป็นผู้ดูแลระบบ</b> ที่แถบด้านบนเมื่อเสร็จ (หมดอายุเองใน 2 ชั่วโมง)`, 'สวมสิทธิ์')) return;
+          try {
+            await POST(`/api/sys/users/${u.id}/impersonate`);
+            S.shellKey = '';
+            await loadMe();
+            toast(`กำลังใช้งานในฐานะ ${u.name}`);
+            go('/');
+          } catch (e) { toast(e.message, 'err'); }
+        }));
         $$('[data-pw]', root).forEach((b) => b.addEventListener('click', async () => {
           const u = user(b.dataset.pw);
           const pw = await modal({
@@ -2002,24 +2039,39 @@
   async function viewSettings() {
     const { user, store, stores } = S.me;
     const canNewShop = !user.superadmin && stores.some((s) => s.role === 'owner');
-    const shops = [];
-    for (const s of stores) {
-      if (!user.superadmin && s.role !== 'owner') continue;
-      if (shops.some((o) => o.id === s.orgId)) continue;
-      shops.push({ id: s.orgId, name: s.orgName || 'ร้าน' });
-    }
+    const owner = !!store.canManageBranches;
+    const branches = stores.filter((s) => s.orgId === store.orgId);
+    const imp = !!user.impersonatedBy;
     return {
       html: `<div class="page narrow">
         <div class="page-head"><div class="ttl"><h2>ตั้งค่า</h2><div class="sub">${esc(user.email)}</div></div></div>
         ${can('settings') ? `<form class="card blueprint form-card" id="sf" novalidate>${CORNERS}
-          <div class="card-title">ตั้งค่าร้าน · ${esc(store.name)}</div>
-          <div class="field"><label for="s-nm">ชื่อร้าน / สาขา</label><input class="input" id="s-nm" name="name" value="${esc(store.name)}" maxlength="80" required></div>
+          <div class="card-title">ตั้งค่าสาขา · ${esc(storeLabel(store))}</div>
+          <div class="field"><label for="s-nm">ชื่อสาขา</label><input class="input" id="s-nm" name="name" value="${esc(store.name)}" maxlength="60" required>
+            <div class="hint">สาขานี้อยู่ภายใต้ร้าน <b>${esc(store.orgName)}</b>${owner ? ' — เปลี่ยนชื่อร้านได้ที่การ์ดร้านด้านล่าง' : ''}</div></div>
           <div class="field"><label for="s-ed">แจ้งเตือนสินค้าใกล้หมดอายุล่วงหน้า (วัน)</label><input class="input" id="s-ed" name="expiryDays" type="number" inputmode="numeric" min="1" max="730" value="${store.expiryDays}">
             <div class="hint">จุดสั่งซื้อ (แจ้งเตือนสต็อกต่ำ) ตั้งแยกได้ในหน้าแก้ไขสินค้าแต่ละตัว</div></div>
           <div class="form-err" hidden></div>
-          <div class="form-foot"><button type="submit" class="btn btn-primary">บันทึกการตั้งค่าร้าน</button></div>
+          <div class="form-foot"><button type="submit" class="btn btn-primary">บันทึกการตั้งค่าสาขา</button></div>
         </form>` : ''}
-        <form class="card blueprint form-card" id="af" novalidate>${CORNERS}
+        ${owner ? `<div class="card blueprint form-card">${CORNERS}
+          <div class="card-title">${ic('store', 20)} ร้าน ${esc(store.orgName)}</div>
+          <form id="rf" class="stack" style="gap:10px" novalidate>
+            <div class="field"><label for="r-nm">ชื่อร้าน (ใช้ร่วมกันทุกสาขา)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" id="r-nm" name="name" value="${esc(store.orgName)}" maxlength="60" required style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">บันทึกชื่อร้าน</button></div></div>
+            <div class="form-err" hidden></div>
+          </form>
+          <div class="field" style="border-top:1px solid var(--color-divider);padding-top:14px"><label>สาขาในร้านนี้ (${branches.length})</label>
+            <div class="stack" style="gap:6px">${branches.map((b) => `<div class="store-opt ${b.id === store.id ? 'on' : ''}" style="cursor:default">${ic('store', 20)}<span class="nm">${esc(b.name)}</span>
+              ${b.id === store.id ? '<span class="tag tag-accent">กำลังใช้งาน</span>' : ''}
+              <button type="button" class="btn btn-ghost btn-ico plain" data-delbr="${b.id}" title="ลบสาขา ${esc(b.name)}" aria-label="ลบสาขา ${esc(b.name)}" ${branches.length <= 1 ? 'disabled' : ''}>${ic('trash')}</button></div>`).join('')}</div>
+            <div class="hint">เพิ่มหรือลบสาขาได้เฉพาะเจ้าของร้านขึ้นไป ร้านต้องมีอย่างน้อย 1 สาขา</div></div>
+          <form id="nf" class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px" novalidate>
+            <div class="field"><label for="n-nm">เพิ่มสาขาในร้าน ${esc(store.orgName)}</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" id="n-nm" name="name" maxlength="60" required placeholder="เช่น สาขาอารีย์" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('plus')}สร้างสาขา</button></div>
+              <div class="hint">เจ้าของร้านทุกคนของร้านนี้จะเห็นสาขาใหม่อัตโนมัติ</div></div>
+            <div class="form-err" hidden></div>
+          </form>
+        </div>` : ''}
+        ${imp ? '' : `<form class="card blueprint form-card" id="af" novalidate>${CORNERS}
           <div class="card-title">บัญชีของฉัน</div>
           <div class="field"><label for="a-nm">ชื่อที่แสดง</label><input class="input" id="a-nm" name="name" value="${esc(user.name)}" maxlength="80" required></div>
           <div class="form-err" hidden></div>
@@ -2032,21 +2084,15 @@
           ${pwField('p-new2', 'next2', 'ยืนยันรหัสผ่านใหม่', 'new-password')}
           <div class="form-err" hidden></div>
           <div class="form-foot"><button type="submit" class="btn btn-primary">${ic('key')}เปลี่ยนรหัสผ่าน</button></div>
-        </form>
+        </form>`}
         <div class="card blueprint form-card">${CORNERS}
           <div class="card-title">ร้านและสาขาของฉัน (${stores.length})</div>
           <div class="stack" style="gap:8px">${storeOptions(stores, store.id, 'data-sw', (s) => (s.id === store.id ? '<span class="tag tag-accent">กำลังใช้งาน</span>' : `<span class="small">สลับ</span>${ic('right')}`))}</div>
-          ${can('settings') ? '' : '<div class="small muted">สาขาที่คุณเข้าถึงได้กำหนดโดยเจ้าของร้าน</div>'}
-          <form id="nf" class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px" novalidate ${shops.length ? '' : 'hidden'}>
-            <div class="field"><label for="n-org">เพิ่มสาขาในร้าน</label><select class="input" id="n-org" name="orgId">${shops.map((o) => `<option value="${o.id}" ${o.id === store.orgId ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>
-              <div class="hint">เจ้าของร้านทุกคนของร้านที่เลือกจะเห็นสาขานี้อัตโนมัติ</div></div>
-            <div class="field"><label for="n-nm">ชื่อสาขา</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" id="n-nm" name="name" maxlength="80" required placeholder="เช่น สาขาอารีย์" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('plus')}สร้างสาขา</button></div></div>
-            <div class="form-err" hidden></div>
-          </form>
+          ${owner ? '' : '<div class="small muted">สาขาที่คุณเข้าถึงได้กำหนดโดยเจ้าของร้าน</div>'}
           <form id="of" class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px" novalidate ${canNewShop ? '' : 'hidden'}>
             <div class="field"><label for="o-nm">สร้างร้านใหม่ (แยกข้อมูลจากร้านเดิมทั้งหมด คุณจะเป็นเจ้าของร้าน)</label>
               <input class="input" id="o-nm" name="shopName" maxlength="60" placeholder="ชื่อร้าน เช่น Lily Cosmetics"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" name="name" maxlength="80" placeholder="ชื่อสาขาแรก (เว้นว่างได้)" aria-label="ชื่อสาขาแรก" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('store')}สร้างร้าน</button></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" name="name" maxlength="60" placeholder="ชื่อสาขาแรก (เว้นว่าง = สาขาหลัก)" aria-label="ชื่อสาขาแรก" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('store')}สร้างร้าน</button></div>
             <div class="form-err" hidden></div>
           </form>
         </div>
@@ -2056,18 +2102,37 @@
         bindEyes(root);
         const sf = $('#sf', root);
         if (sf) onSubmit(sf, async (d) => { await PUT('/api/store', { name: d.name, expiryDays: Number(d.expiryDays) }); toast('บันทึกการตั้งค่าร้านแล้ว'); await refreshMe(); });
-        onSubmit($('#af', root), async (d) => { S.me = await PUT('/api/me', { name: d.name }); updateShellBits(); toast('บันทึกชื่อแล้ว'); });
-        onSubmit($('#pf', root), async (d, form) => {
+        const af = $('#af', root);
+        if (af) onSubmit(af, async (d) => { S.me = await PUT('/api/me', { name: d.name }); updateShellBits(); toast('บันทึกชื่อแล้ว'); });
+        const pf = $('#pf', root);
+        if (pf) onSubmit(pf, async (d, form) => {
           if (d.next !== d.next2) throw new Error('รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน');
           await POST('/api/me/password', { current: d.current, next: d.next });
           form.reset();
           toast('เปลี่ยนรหัสผ่านแล้ว อุปกรณ์อื่นจะถูกออกจากระบบ');
         });
-        onSubmit($('#nf', root), async (d) => {
-          S.me = await POST('/api/stores', { kind: 'branch', name: d.name, orgId: Number(d.orgId) });
-          toast(`สร้างสาขา ${S.me.store.name} แล้ว`);
+        const rf = $('#rf', root);
+        if (rf) onSubmit(rf, async (d) => { S.me = await PUT('/api/org', { name: d.name }); updateShellBits(); toast('บันทึกชื่อร้านแล้ว'); render(); });
+        const nf = $('#nf', root);
+        if (nf) onSubmit(nf, async (d) => {
+          S.me = await POST('/api/stores', { kind: 'branch', name: d.name, orgId: store.orgId });
+          toast(`สร้างสาขา ${storeLabel(S.me.store)} แล้ว`);
           go('/');
         });
+        $$('[data-delbr]', root).forEach((b) => b.addEventListener('click', async () => {
+          const br = branches.find((x) => x.id === Number(b.dataset.delbr));
+          const res = await modal({
+            title: `ลบสาขา ${br.name}?`,
+            body: `<div class="dialog-body">สินค้า ล็อต และประวัติการเคลื่อนไหวทั้งหมดของ <b>${esc(storeLabel(br))}</b> จะถูก<b>ลบถาวร</b> กู้คืนไม่ได้ พนักงานที่อยู่เฉพาะสาขานี้จะเข้าไม่ได้อีก (บัญชีผู้ใช้ยังอยู่)</div>
+              <div class="field"><label for="cf">พิมพ์ชื่อสาขา <b>${esc(br.name)}</b> เพื่อยืนยัน</label><input class="input" id="cf" autocomplete="off"></div><div class="form-err" hidden></div>`,
+            actions: [{ label: 'ยกเลิก' }, { label: ic('trash') + 'ลบสาขาถาวร', cls: 'btn-danger', onClick: (dlg) => DEL(`/api/stores/${br.id}`, { confirmName: $('#cf', dlg).value }) }],
+          });
+          if (!res) return;
+          S.me = res;
+          S.shellKey = '';
+          toast(`ลบสาขา ${br.name} แล้ว`);
+          render();
+        }));
         onSubmit($('#of', root), async (d) => {
           S.me = await POST('/api/stores', { kind: 'shop', shopName: d.shopName, name: d.name });
           toast(`สร้างร้าน ${S.me.store.orgName} แล้ว`);
@@ -2076,7 +2141,7 @@
         $$('[data-sw]', root).forEach((b) => b.addEventListener('click', async () => {
           const id = Number(b.dataset.sw);
           if (id === store.id) return;
-          try { S.me = await POST('/api/me/store', { storeId: id }); toast('สลับไปที่ ' + S.me.store.name); go('/'); } catch (e) { toast(e.message, 'err'); }
+          try { S.me = await POST('/api/me/store', { storeId: id }); toast('สลับไปที่ ' + storeLabel(S.me.store)); go('/'); } catch (e) { toast(e.message, 'err'); }
         }));
       },
     };
@@ -2092,7 +2157,7 @@
           <div style="flex:1;min-width:0"><div class="card-title">${esc(user.name)}</div><div class="card-meta" style="overflow-wrap:anywhere">${esc(user.email)}</div></div>
           <span class="tag tag-accent">${esc(user.superadmin ? 'ผู้ดูแลระบบ' : store.roleLabel)}</span></div>
         <div class="field"><label>ร้านที่กำลังจัดการ</label>
-          <button type="button" class="btn btn-secondary store-btn" data-act="store" style="width:100%;min-height:52px">${ic('store', 20)}<span class="nm">${esc(store.name)}</span>${stores.length > 1 ? '<span class="small muted">สลับร้าน</span>' : ''}${ic('right')}</button></div>
+          <button type="button" class="btn btn-secondary store-btn" data-act="store" style="width:100%;min-height:52px">${ic('store', 20)}<span class="nm">${esc(storeLabel(store))}</span>${stores.length > 1 ? '<span class="small muted">สลับร้าน / สาขา</span>' : ''}${ic('right')}</button></div>
         <div class="menu-sec"><div class="h">คลังสินค้า</div>
           ${can('stock.adjust') ? link('#/move/adj', 'adjust', 'ปรับยอดสต็อก') : ''}
           ${link('#/history', 'history', 'ประวัติการเคลื่อนไหว')}

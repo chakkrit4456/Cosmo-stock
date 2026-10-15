@@ -241,19 +241,22 @@ function setSessionCookie(req, res, token, maxAgeSec) {
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
-async function createSession(req, res, userId, storeId, remember) {
+// impersonatorId: ผู้ดูแลระบบที่สวมสิทธิ์เป็นผู้ใช้นี้ (session นี้ไม่นับเป็นการเข้าใช้ของผู้ใช้ และหมดอายุใน 2 ชั่วโมง)
+async function createSession(req, res, userId, storeId, remember, impersonatorId = null) {
   const token = crypto.randomBytes(32).toString('base64url');
-  const ttl = remember ? 30 * DAY : 12 * 3600 * 1000;
-  await run('INSERT INTO sessions(token, user_id, store_id, expires_at) VALUES (?, ?, ?, ?)', hashToken(token), userId, storeId, Date.now() + ttl);
-  await run('UPDATE users SET last_login = ? WHERE id = ?', nowIso(), userId);
-  setSessionCookie(req, res, token, remember ? ttl / 1000 : null);
+  const ttl = impersonatorId ? 2 * 3600 * 1000 : remember ? 30 * DAY : 12 * 3600 * 1000;
+  await run('INSERT INTO sessions(token, user_id, store_id, expires_at, impersonator_id) VALUES (?, ?, ?, ?, ?)', hashToken(token), userId, storeId, Date.now() + ttl, impersonatorId);
+  if (!impersonatorId) await run('UPDATE users SET last_login = ? WHERE id = ?', nowIso(), userId);
+  setSessionCookie(req, res, token, remember && !impersonatorId ? ttl / 1000 : null);
 }
 
 async function loadSession(req) {
   const token = parseCookies(req).cs_sid;
   if (!token || token.length > 100) return null;
-  const s = await get(`SELECT s.token, s.store_id, s.expires_at, u.id AS user_id, u.name, u.email, u.is_superadmin
-                 FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`, hashToken(token));
+  const s = await get(`SELECT s.token, s.store_id, s.expires_at, s.impersonator_id, u.id AS user_id, u.name, u.email, u.is_superadmin,
+                        i.name AS impersonator_name, i.email AS impersonator_email
+                 FROM sessions s JOIN users u ON u.id = s.user_id LEFT JOIN users i ON i.id = s.impersonator_id
+                 WHERE s.token = ?`, hashToken(token));
   if (!s || s.expires_at < Date.now()) return null;
   s.superadmin = !!s.is_superadmin;
   return s;
@@ -318,9 +321,35 @@ async function accessibleStores(userId) {
   return (await all('SELECT id, name, org_id FROM stores ORDER BY lower(name)')).map((s) => ({ id: s.id, name: s.name, orgId: s.org_id, role: 'owner' }));
 }
 
+const DEFAULT_BRANCH = 'สาขาหลัก';
+const branchVal = (v, label = 'ชื่อสาขา') => text(v, { label, max: 60, required: true });
+
+// ชื่อสาขาห้ามซ้ำกันภายในร้านเดียวกัน (ไม่สนตัวพิมพ์เล็ก/ใหญ่)
+async function assertBranchFree(orgId, name, exceptId = 0) {
+  if (await get('SELECT 1 FROM stores WHERE org_id = ? AND lower(name) = lower(?) AND id <> ?', orgId, name, exceptId)) {
+    throw new HttpError(409, `ร้านนี้มีสาขาชื่อ "${name}" อยู่แล้ว`);
+  }
+}
+
+// สาขาต้องอยู่ภายใต้ร้าน (org) เสมอ
 async function createStore(orgId, name, at = nowIso()) {
+  if (!orgId) throw new HttpError(400, 'ต้องระบุร้านของสาขา');
+  await assertBranchFree(orgId, name);
   return await insert('INSERT INTO stores(name, org_id, created_at) VALUES (?, ?, ?)', name, orgId, at);
 }
+
+// ลบสาขาพร้อมข้อมูลทั้งหมดของสาขา (movements อ้าง products โดยไม่ cascade จึงต้องลบก่อน)
+async function deleteStoreData(storeId) {
+  await run('UPDATE sessions SET store_id = NULL WHERE store_id = ?', storeId);
+  await run('DELETE FROM movements WHERE store_id = ?', storeId);
+  await run('DELETE FROM products WHERE store_id = ?', storeId);
+  await run('DELETE FROM counters WHERE store_id = ?', storeId);
+  await run('DELETE FROM members WHERE store_id = ?', storeId);
+  await run('DELETE FROM stores WHERE id = ?', storeId);
+}
+
+// เพิ่ม/ลบสาขา และเปลี่ยนชื่อร้าน — เจ้าของร้านขึ้นไป (เจ้าของร้านของร้านนั้น หรือผู้ดูแลระบบ)
+const canManageBranches = async (userId, orgId) => await isSuperadmin(userId) || await isOrgOwner(userId, orgId);
 
 async function seedOrgRoles(orgId) {
   if (await get('SELECT 1 FROM org_roles WHERE org_id = ?', orgId)) return;
@@ -383,7 +412,9 @@ async function mePayload(ctx) {
     store.orgId = current.orgId;
     store.orgName = orgNames.get(current.orgId) || '';
   }
-  return { user: { id: session.user_id, name: session.name, email: session.email, superadmin: !!session.superadmin }, stores, store };
+  if (store) store.canManageBranches = await canManageBranches(session.user_id, current.orgId);
+  const impersonatedBy = session.impersonator_id ? { name: session.impersonator_name, email: session.impersonator_email } : null;
+  return { user: { id: session.user_id, name: session.name, email: session.email, superadmin: !!session.superadmin, impersonatedBy }, stores, store };
 }
 
 // — auth —
@@ -405,7 +436,8 @@ api('POST', '/api/auth/login', { auth: false, store: false }, async (ctx) => {
 
 api('POST', '/api/auth/register', { auth: false, store: false }, async (ctx) => {
   const b = ctx.body;
-  const storeName = text(b.storeName, { label: 'ชื่อร้าน', max: 80, required: true });
+  const shopName = text(b.shopName ?? b.storeName, { label: 'ชื่อร้าน', max: 60, required: true });
+  const branchName = text(b.branchName, { label: 'ชื่อสาขาแรก', max: 60 }) || DEFAULT_BRANCH;
   const name = text(b.name, { label: 'ชื่อผู้ใช้', max: 80, required: true });
   const email = emailVal(b.email);
   const pass = passwordVal(b.password);
@@ -415,7 +447,7 @@ api('POST', '/api/auth/register', { auth: false, store: false }, async (ctx) => 
   const { userId, storeId } = await tx(async () => {
     const at = nowIso();
     const userId = await insert('INSERT INTO users(email, name, pass, created_at) VALUES (?, ?, ?, ?)', email, name, hashPassword(pass), at);
-    const storeId = await createStore(await createOrg(storeName.split(' · ')[0], at), storeName, at);
+    const storeId = await createStore(await createOrg(shopName, at), branchName, at);
     await run('INSERT INTO members(store_id, user_id, role, created_at) VALUES (?, ?, ?, ?)', storeId, userId, 'owner', at);
     return { userId, storeId };
   });
@@ -444,7 +476,18 @@ api('POST', '/api/me/store', { store: false }, async (ctx) => {
   return await mePayload(ctx);
 });
 
+// เลิกสวมสิทธิ์ กลับเป็นบัญชีผู้ดูแลระบบเดิม (อยู่สาขาเดิมต่อ)
+api('POST', '/api/auth/impersonate/stop', { store: false }, async (ctx) => {
+  const adminId = ctx.session.impersonator_id;
+  if (!adminId) throw new HttpError(400, 'ไม่ได้สวมสิทธิ์ผู้ใช้อยู่');
+  await run('DELETE FROM sessions WHERE token = ?', ctx.session.token);
+  if (!await isSuperadmin(adminId)) { setSessionCookie(ctx.req, ctx.res, '', 0); return { ok: true }; }
+  await createSession(ctx.req, ctx.res, adminId, ctx.session.store_id, false);
+  return { ok: true };
+});
+
 api('PUT', '/api/me', { store: false }, async (ctx) => {
+  if (ctx.session.impersonator_id) throw new HttpError(403, 'แก้ไขบัญชีไม่ได้ระหว่างสวมสิทธิ์ผู้ใช้');
   const name = text(ctx.body.name, { label: 'ชื่อ', max: 80, required: true });
   await run('UPDATE users SET name = ? WHERE id = ?', name, ctx.session.user_id);
   ctx.session.name = name;
@@ -452,6 +495,7 @@ api('PUT', '/api/me', { store: false }, async (ctx) => {
 });
 
 api('POST', '/api/me/password', { store: false }, async (ctx) => {
+  if (ctx.session.impersonator_id) throw new HttpError(403, 'เปลี่ยนรหัสผ่านไม่ได้ระหว่างสวมสิทธิ์ผู้ใช้');
   const u = await get('SELECT pass FROM users WHERE id = ?', ctx.session.user_id);
   if (!verifyPassword(ctx.body.current || '', u.pass)) throw new HttpError(400, 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
   const next = passwordVal(ctx.body.next, 'รหัสผ่านใหม่');
@@ -465,18 +509,18 @@ api('POST', '/api/stores', { store: false }, async (ctx) => {
   const mine = await memberships(userId);
   const superadmin = await isSuperadmin(userId);
   const kind = ctx.body.kind === 'shop' || (!mine.length && !superadmin) ? 'shop' : 'branch';
-  const name = text(ctx.body.name, { label: kind === 'shop' ? 'ชื่อสาขาแรก' : 'ชื่อสาขา', max: 80, required: kind === 'branch' });
+  const name = kind === 'branch' ? branchVal(ctx.body.name) : text(ctx.body.name, { label: 'ชื่อสาขาแรก', max: 60 }) || DEFAULT_BRANCH;
   const storeId = await tx(async () => {
     const at = nowIso();
     if (kind === 'branch') {
       const orgId = Number(ctx.body.orgId) || await orgOf(ctx.session.store_id);
       if (!await get('SELECT 1 FROM orgs WHERE id = ?', orgId)) throw new HttpError(400, 'ไม่พบร้าน');
-      if (!superadmin && !await isOrgOwner(userId, orgId)) throw new HttpError(403, 'เฉพาะเจ้าของร้านเท่านั้นที่เพิ่มสาขาได้');
+      if (!await canManageBranches(userId, orgId)) throw new HttpError(403, 'เฉพาะเจ้าของร้านเท่านั้นที่เพิ่มสาขาได้');
       return await createStore(orgId, name, at);
     }
     if (mine.length && !superadmin && !mine.some((s) => s.role === 'owner')) throw new HttpError(403, 'เฉพาะเจ้าของร้านเท่านั้นที่สร้างร้านใหม่ได้');
-    const shopName = text(ctx.body.shopName ?? name.split(' · ')[0], { label: 'ชื่อร้าน', max: 60, required: true });
-    const id = await createStore(await createOrg(shopName, at), name || `${shopName} · สาขาหลัก`, at);
+    const shopName = text(ctx.body.shopName, { label: 'ชื่อร้าน', max: 60, required: true });
+    const id = await createStore(await createOrg(shopName, at), name, at);
     if (!superadmin) await run('INSERT INTO members(store_id, user_id, role, created_at) VALUES (?, ?, ?, ?)', id, userId, 'owner', at);
     return id;
   });
@@ -493,10 +537,32 @@ api('GET', '/api/store', async (ctx) => {
 });
 
 api('PUT', '/api/store', { perm: 'settings' }, async (ctx) => {
-  const name = text(ctx.body.name, { label: 'ชื่อร้าน', max: 80, required: true });
+  const name = branchVal(ctx.body.name);
   const expiryDays = intVal(ctx.body.expiryDays, { label: 'จำนวนวันแจ้งเตือนหมดอายุ', min: 1, max: 730 });
+  await assertBranchFree(ctx.orgId, name, ctx.storeId);
   await run('UPDATE stores SET name = ?, expiry_days = ? WHERE id = ?', name, expiryDays, ctx.storeId);
   return { ok: true };
+});
+
+// ชื่อร้าน (ใช้ร่วมกันทุกสาขา) — เฉพาะเจ้าของร้านขึ้นไป
+api('PUT', '/api/org', async (ctx) => {
+  if (!await canManageBranches(ctx.session.user_id, ctx.orgId)) throw new HttpError(403, 'เฉพาะเจ้าของร้านเท่านั้นที่เปลี่ยนชื่อร้านได้');
+  await run('UPDATE orgs SET name = ? WHERE id = ?', text(ctx.body.name, { label: 'ชื่อร้าน', max: 60, required: true }), ctx.orgId);
+  return await mePayload(ctx);
+});
+
+// ลบสาขา — เฉพาะเจ้าของร้านขึ้นไป ร้านต้องเหลืออย่างน้อย 1 สาขา (ลบทั้งร้านทำได้ที่หน้าผู้ดูแลระบบ)
+api('DELETE', '/api/stores/:id', { store: false }, async (ctx) => {
+  const s = await get('SELECT id, name, org_id FROM stores WHERE id = ?', Number(ctx.params.id) || 0);
+  if (!s) throw new HttpError(404, 'ไม่พบสาขา');
+  if (!await canManageBranches(ctx.session.user_id, s.org_id)) throw new HttpError(403, 'เฉพาะเจ้าของร้านเท่านั้นที่ลบสาขาได้');
+  if (String(ctx.body.confirmName || '').trim() !== s.name) throw new HttpError(400, 'ชื่อสาขาที่พิมพ์ยืนยันไม่ตรงกัน');
+  if (Number((await get('SELECT COUNT(*) AS c FROM stores WHERE org_id = ?', s.org_id)).c) <= 1) {
+    throw new HttpError(400, 'ร้านต้องมีอย่างน้อย 1 สาขา จึงลบสาขาสุดท้ายไม่ได้');
+  }
+  await tx(() => deleteStoreData(s.id));
+  if (ctx.session.store_id === s.id) ctx.session.store_id = null;
+  return await mePayload(ctx);
 });
 
 // — dashboard —
@@ -1138,7 +1204,7 @@ api('GET', '/api/sys/overview', SYS, async () => {
 api('POST', '/api/sys/orgs', SYS, async (ctx) => {
   const b = ctx.body;
   const shopName = text(b.shopName, { label: 'ชื่อร้าน', max: 60, required: true });
-  const branchName = text(b.branchName, { label: 'ชื่อสาขาแรก', max: 80 }) || `${shopName} · สาขาหลัก`;
+  const branchName = text(b.branchName, { label: 'ชื่อสาขาแรก', max: 60 }) || DEFAULT_BRANCH;
   const email = emailVal(b.ownerEmail);
   return await tx(async () => {
     const at = nowIso();
@@ -1168,14 +1234,7 @@ api('DELETE', '/api/sys/orgs/:id', SYS, async (ctx) => {
   if (String(ctx.body.confirmName || '').trim() !== o.name) throw new HttpError(400, 'ชื่อร้านที่พิมพ์ยืนยันไม่ตรงกัน');
   await tx(async () => {
     const ids = (await all('SELECT id FROM stores WHERE org_id = ?', o.id)).map((s) => s.id);
-    for (const id of ids) {
-      await run('UPDATE sessions SET store_id = NULL WHERE store_id = ?', id);
-      await run('DELETE FROM movements WHERE store_id = ?', id);
-      await run('DELETE FROM products WHERE store_id = ?', id);
-      await run('DELETE FROM counters WHERE store_id = ?', id);
-      await run('DELETE FROM members WHERE store_id = ?', id);
-      await run('DELETE FROM stores WHERE id = ?', id);
-    }
+    for (const id of ids) await deleteStoreData(id);
     await run('DELETE FROM orgs WHERE id = ?', o.id);
   });
   return { ok: true };
@@ -1197,6 +1256,18 @@ api('POST', '/api/sys/users/:id/password', SYS, async (ctx) => {
   await run('UPDATE users SET pass = ? WHERE id = ?', hashPassword(passwordVal(ctx.body.password, 'รหัสผ่านใหม่')), u.id);
   if (u.id === ctx.session.user_id) await run('DELETE FROM sessions WHERE user_id = ? AND token <> ?', u.id, ctx.session.token);
   else await run('DELETE FROM sessions WHERE user_id = ?', u.id);
+  return { ok: true };
+});
+
+// สวมสิทธิ์: ผู้ดูแลระบบเข้าใช้งานในฐานะผู้ใช้คนอื่น (เห็นและทำได้เท่าที่ผู้ใช้นั้นทำได้)
+api('POST', '/api/sys/users/:id/impersonate', SYS, async (ctx) => {
+  const u = await sysUser(ctx.params.id);
+  if (u.id === ctx.session.user_id) throw new HttpError(400, 'สวมสิทธิ์ตัวเองไม่ได้');
+  if (u.is_superadmin) throw new HttpError(400, 'สวมสิทธิ์ผู้ดูแลระบบคนอื่นไม่ได้');
+  const first = (await accessibleStores(u.id))[0];
+  await run('DELETE FROM sessions WHERE token = ?', ctx.session.token);
+  await createSession(ctx.req, ctx.res, u.id, first?.id ?? null, false, ctx.session.user_id);
+  console.log(`[impersonate] ${ctx.session.email} → ${u.email}`);
   return { ok: true };
 });
 
@@ -1259,7 +1330,8 @@ async function handleApi(req, res, url) {
     ctx.storeId = ctx.session.store_id;
     ctx.orgId = await orgOf(ctx.storeId);
     ctx.role = role;
-    ctx.actor = { storeId: ctx.storeId, userId: ctx.session.user_id, userName: ctx.session.name };
+    const by = ctx.session.impersonator_id ? ` (สวมสิทธิ์โดย ${ctx.session.impersonator_email})` : '';
+    ctx.actor = { storeId: ctx.storeId, userId: ctx.session.user_id, userName: ctx.session.name + by };
     if (route.opts.perm && !await can(ctx.role, route.opts.perm, ctx.orgId)) throw new HttpError(403, 'คุณไม่มีสิทธิ์ทำรายการนี้');
   }
   if (route.opts.sys && !await isSuperadmin(ctx.session.user_id)) throw new HttpError(403, 'เฉพาะผู้ดูแลระบบเท่านั้น');
@@ -1346,8 +1418,8 @@ async function seed() {
     const somchai = await addUser('somchai@rosebeauty.co', 'สมชาย ใจดี', DEMO_PASSWORD);
     const pim = await addUser('pimchanok@rosebeauty.co', 'พิมพ์ชนก แก้วใส', DEMO_PASSWORD);
     const natt = await addUser('nattawut@rosebeauty.co', 'ณัฐวุฒิ ศรีสุข', DEMO_PASSWORD);
-    const siam = await addStore('Rose Beauty · สาขาสยาม');
-    const ari = await addStore('Rose Beauty · สาขาอารีย์');
+    const siam = await addStore('สาขาสยาม');
+    const ari = await addStore('สาขาอารีย์');
     await addMember(siam, admin, 'owner'); await addMember(siam, somchai, 'staff'); await addMember(siam, pim, 'manager'); await addMember(siam, natt, 'viewer');
     await addMember(ari, admin, 'owner'); await addMember(ari, pim, 'manager');
 
@@ -1440,6 +1512,24 @@ async function ensureSuperadmin() {
   }
   return { email, password };
 }
+// ข้อมูลรุ่นเก่าเก็บชื่อสาขาเป็น "ร้าน · สาขา" และอาจมีสาขาที่ไม่มีร้าน — แยกชื่อ แล้วผูกทุกสาขาเข้ากับร้าน
+async function migrateBranches() {
+  await tx(async () => {
+    for (const s of await all('SELECT id, name, created_at FROM stores WHERE org_id IS NULL')) {
+      const [shop, ...rest] = s.name.split(' · ');
+      const orgId = await createOrg(shop.trim() || s.name, s.created_at);
+      await run('UPDATE stores SET org_id = ?, name = ? WHERE id = ?', orgId, rest.join(' · ').trim() || DEFAULT_BRANCH, s.id);
+    }
+    for (const s of await all(`SELECT s.id, s.name, s.org_id, o.name AS org_name FROM stores s JOIN orgs o ON o.id = s.org_id
+                               WHERE strpos(s.name, o.name || ' · ') = 1`)) {
+      const name = s.name.slice(s.org_name.length + 3).trim() || DEFAULT_BRANCH;
+      if (await get('SELECT 1 FROM stores WHERE org_id = ? AND lower(name) = lower(?) AND id <> ?', s.org_id, name, s.id)) continue;
+      await run('UPDATE stores SET name = ? WHERE id = ?', name, s.id);
+    }
+    await run('ALTER TABLE stores ALTER COLUMN org_id SET NOT NULL');
+  });
+}
+
 async function main() {
   if (process.argv.includes('--reset')) {
     if (!process.argv.includes('--yes') && process.env.CONFIRM_RESET !== 'yes') {
@@ -1450,6 +1540,7 @@ async function main() {
     console.log('ลบข้อมูลเดิมทั้งหมดแล้ว จะสร้างข้อมูลตัวอย่างใหม่');
   }
   await initSchema();
+  await migrateBranches();
   for (const o of await all('SELECT id FROM orgs')) await seedOrgRoles(o.id);
   const seeded = process.env.SEED_DEMO === '0' ? false : await seed();
   const superadmin = await ensureSuperadmin();

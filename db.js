@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   store_id INTEGER,
   expires_at BIGINT NOT NULL
 );
+-- ผู้ดูแลระบบที่กำลังสวมสิทธิ์ผู้ใช้ของ session นี้ (NULL = เข้าใช้เองตามปกติ)
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS impersonator_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
 CREATE TABLE IF NOT EXISTS products (
   id SERIAL PRIMARY KEY,
   store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
