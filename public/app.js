@@ -21,7 +21,7 @@
   const initial = (name) => (name || '?').trim().replace(/^[เแโใไ]/, '').charAt(0).toUpperCase() || '?';
   const abbr = (p) => ((p.sku.split('-')[1] || p.sku).replace(/[^A-Z]/g, '').slice(0, 2) || p.sku.slice(0, 2));
   const ic = (name, size) => `<cs-i name="${name}"${size ? ` size="${size}"` : ''}></cs-i>`;
-  const CORNERS = '<i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>';
+  const CORNERS = ''; // เดิมเป็นเครื่องหมาย + ที่มุมกรอบ ตอนนี้ไม่ใช้แล้ว
   const qs = (o) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(o)) if (v !== '' && v != null && v !== false) p.set(k, v);
@@ -34,6 +34,19 @@
   const TYPE = { in: { label: 'รับเข้า', icon: 'in' }, out: { label: 'จ่ายออก', icon: 'out' }, adj: { label: 'ปรับยอด', icon: 'adjust' } };
   const stTag = (s) => `<span class="tag st-${s}">${STATUS[s]}</span>`;
   const tyTag = (t) => `<span class="tag t-${t}">${TYPE[t].label}</span>`;
+  function fmtPacks(qty, packs, unit) {
+    if (!packs?.length || qty <= 0) return '';
+    let left = qty;
+    const parts = [];
+    for (const k of packs) {
+      const n = Math.floor(left / k.perQty);
+      if (n) { parts.push(`${fmtN(n)} ${k.name}`); left -= n * k.perQty; }
+    }
+    if (!parts.length) return '';
+    if (left) parts.push(`${fmtN(left)} ${unit}`);
+    return parts.join(' ');
+  }
+  const packNote = (m) => (m.packName ? `${fmtN(m.packCount)} ${m.packName}` : '');
   const daysLabel = (d) => (d < 0 ? `หมดอายุแล้ว ${-d} วัน` : d === 0 ? 'หมดอายุวันนี้' : `อีก ${d} วัน`);
   const empty = (icon, text, extra = '') => `<div class="empty">${ic(icon, 32)}<div>${text}</div>${extra}</div>`;
   const can = (perm) => !!S.me?.store?.perms?.[perm];
@@ -294,16 +307,31 @@
     return q.createSvgTag({ cellSize: 4, margin: 1, scalable: true });
   }
 
-  async function printLabels(p) {
-    let svg = '';
-    try { svg = await qrSvg(p.barcode || p.sku); } catch (e) { toast(e.message, 'err'); return; }
+  // QR ต่อล็อต: CSL1|<sku>|<เลขล็อต>|<วันหมดอายุ> (แต่ละช่อง URI-encode) — เซิร์ฟเวอร์แยกกลับด้วย parseLotCode
+  const lotCode = (p, l) => `CSL1|${encodeURIComponent(p.sku)}|${encodeURIComponent(l.lotNo || '')}|${l.expiry || ''}`;
+  const lotPrintable = (l) => !!(l.lotNo || l.expiry);
+
+  async function printLabels(p, lots = [], pickLotId = null) {
+    const units = [
+      { key: '', name: p.unit, per: 1, code: p.barcode || p.sku, barcode: p.barcode, price: p.price },
+      ...[...(p.packs || [])].reverse().filter((k) => k.barcode).map((k) => ({ key: String(k.id), name: k.name, per: k.perQty, code: k.barcode, barcode: k.barcode, price: k.price })),
+      ...lots.filter(lotPrintable).map((l) => ({ key: `lot:${l.id}`, name: `ล็อต ${l.lotNo || fmtD(l.expiry)}`, per: 1, code: lotCode(p, l), barcode: '', price: p.price, lot: l })),
+    ];
+    try {
+      const svgs = await Promise.all(units.map((u) => qrSvg(u.code)));
+      units.forEach((u, i) => { u.svg = svgs[i]; });
+    } catch (e) { toast(e.message, 'err'); return; }
     const MAX = 60;
     const clampN = (v) => Math.min(MAX, Math.max(1, Math.floor(Number(v)) || 1));
-    const labelHtml = (price) => `<div class="label">${svg}<div><b>${esc(p.name)}</b><br>${esc(p.sku)}${p.barcode ? '<br>' + esc(p.barcode) : ''}${price ? '<br>' + fmtB(p.price) : ''}</div></div>`;
+    const unitOf = (key) => units.find((u) => u.key === key) || units[0];
+    let sel = units.some((u) => u.key === `lot:${pickLotId}`) ? `lot:${pickLotId}` : '';
+    const labelHtml = (u, price) => `<div class="label">${u.svg}<div><b>${esc(p.name)}</b>${u.lot ? `<br><b>ล็อต ${esc(u.lot.lotNo || '-')}</b>${u.lot.expiry ? `<br>หมดอายุ ${fmtD(u.lot.expiry)}` : ''}` : ''}${u.per > 1 ? `<br><b>${esc(u.name)} · ${fmtN(u.per)} ${esc(p.unit)}</b>` : ''}<br>${esc(p.sku)}${u.barcode ? '<br>' + esc(u.barcode) : ''}${price && u.price != null ? '<br>' + fmtB(u.price) : ''}</div></div>`;
     const opts = await modal({
       title: 'พิมพ์ฉลาก QR',
       wide: true,
-      body: `<div class="dialog-body">${esc(p.name)} · ${esc(p.barcode || p.sku)}</div>
+      body: `<div class="dialog-body">${esc(p.name)} · ${esc(p.sku)}</div>
+        ${units.length > 1 ? `<div class="field"><label>ฉลากสำหรับหน่วย</label><div class="seg unit-seg" id="lbl-unit">${units.map((u, i) => `<button type="button" class="btn btn-secondary seg-opt ${u.key === sel ? 'on' : ''}" data-unit="${u.key}">${esc(u.name)}${u.per > 1 ? ` <span class="small">×${fmtN(u.per)}</span>` : ''}</button>`).join('')}</div></div>` : ''}
+        ${(p.packs || []).some((k) => !k.barcode) ? '<div class="small muted">หน่วยบรรจุที่ยังไม่มีบาร์โค้ดจะพิมพ์ฉลากไม่ได้ เพิ่มบาร์โค้ดได้ที่หน้าแก้ไขสินค้า</div>' : ''}
         <div class="lbl-controls">
           <div class="field"><label for="lbl-n">จำนวนฉลาก (สูงสุด ${MAX})</label>
             <div class="stepper"><button type="button" class="btn btn-secondary btn-ico" data-step="-1" aria-label="ลด">${ic('minus', 18)}</button>
@@ -316,16 +344,23 @@
         <div class="small muted">ฉลากขนาด 60 มม. · ในหน้าต่างพิมพ์เลือกขนาดกระดาษและ "บันทึกเป็น PDF" ได้</div>`,
       actions: [
         { label: 'ยกเลิก' },
-        { label: ic('printer') + 'พิมพ์', cls: 'btn-primary', onClick: (dlg) => ({ n: clampN($('#lbl-n', dlg).value), price: $('#lbl-price', dlg).checked }) },
+        { label: ic('printer') + 'พิมพ์', cls: 'btn-primary', onClick: (dlg) => ({ n: clampN($('#lbl-n', dlg).value), price: $('#lbl-price', dlg).checked, unit: unitOf(sel) }) },
       ],
       onMount(dlg) {
         const input = $('#lbl-n', dlg);
         const price = $('#lbl-price', dlg);
         const draw = () => {
           const n = clampN(input.value);
-          $('#lbl-sheet', dlg).innerHTML = labelHtml(price.checked).repeat(n);
+          $('#lbl-sheet', dlg).innerHTML = labelHtml(unitOf(sel), price.checked).repeat(n);
           $('#lbl-count', dlg).textContent = `${fmtN(n)} ฉลาก`;
         };
+        $('#lbl-unit', dlg)?.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-unit]');
+          if (!b) return;
+          sel = b.dataset.unit;
+          $$('[data-unit]', dlg).forEach((x) => x.classList.toggle('on', x === b));
+          draw();
+        });
         $$('[data-step]', dlg).forEach((b) => b.addEventListener('click', () => {
           input.value = clampN(clampN(input.value) + Number(b.dataset.step));
           draw();
@@ -337,7 +372,7 @@
       },
     });
     if (!opts) return;
-    $('#print-area').innerHTML = labelHtml(opts.price).repeat(opts.n);
+    $('#print-area').innerHTML = labelHtml(opts.unit, opts.price).repeat(opts.n);
     document.body.classList.add('print-label');
     const done = () => { document.body.classList.remove('print-label'); $('#print-area').innerHTML = ''; window.removeEventListener('afterprint', done); };
     window.addEventListener('afterprint', done);
@@ -359,6 +394,7 @@
     ['/alerts', viewAlerts, { nav: 'alerts' }],
     ['/reports', viewReports, { nav: 'reports', perm: 'report' }],
     ['/users', viewUsers, { nav: 'users', perm: 'users' }],
+    ['/system', viewSystem, { nav: 'system', sys: true }],
     ['/settings', viewSettings, { nav: 'settings' }],
     ['/more', viewMore, { nav: 'more' }],
   ].map(([pattern, view, opts]) => {
@@ -410,8 +446,8 @@
     const navKey = typeof route.opts.nav === 'function' ? route.opts.nav(params) : route.opts.nav;
     $$('[data-nav]').forEach((a) => a.classList.toggle('on', a.dataset.nav === navKey || (navKey === 'more' && a.dataset.nav === 'more')));
     const view = $('#view');
-    if (route.opts.perm && !can(route.opts.perm)) { view.innerHTML = forbidden(); return; }
-    const loader = setTimeout(() => { if (seq === renderSeq) view.innerHTML = `<div class="page">${empty('clock', 'กำลังโหลด…')}</div>`; }, 180);
+    if ((route.opts.perm && !can(route.opts.perm)) || (route.opts.sys && !S.me.user.superadmin)) { view.innerHTML = forbidden(); return; }
+    const loader = setTimeout(() => { if (seq === renderSeq) view.innerHTML = '<div class="page" aria-busy="true" aria-label="กำลังโหลด"><div class="sk sk-h"></div><div class="sk sk-kpis"></div><div class="sk sk-card"></div><div class="sk sk-card short"></div></div>'; }, 180);
     try {
       const out = await route.view({ params, query });
       clearTimeout(loader);
@@ -455,11 +491,12 @@
       : [['dash', '#/', 'grid', 'หน้าแรก'], ['products', '#/products', 'package', 'สินค้า'], ['alerts', '#/alerts', 'bell', 'แจ้งเตือน'], ['history', '#/history', 'history', 'ประวัติ'], ['more', '#/more', 'menu', 'เพิ่มเติม']];
     app.innerHTML = `<div class="shell">
       <aside class="side">
-        <a class="brand" href="#/"><div class="brand-mark">${ic('package', 20)}</div><div><div class="brand-name">CosmoStock</div><div class="brand-tag">จัดการคลังง่าย สต็อกแม่น ธุรกิจเติบโต</div></div></a>
+        <a class="brand" href="#/"><img class="brand-mark" src="/logo-192.png" alt=""><div><div class="brand-name">CosmoStock</div><div class="brand-tag">จัดการคลังง่าย สต็อกแม่น ธุรกิจเติบโต</div></div></a>
         <button type="button" class="btn btn-secondary store-btn" data-act="store">${ic('store')}<span class="nm" data-bind="store"></span>${ic('down', 16)}</button>
         <nav class="nav">${navItems().map(navLink).join('')}</nav>
         <div class="nav-sec">บัญชีและร้าน</div>
         <nav class="nav">
+          ${S.me.user.superadmin ? navLink({ nav: 'system', href: '#/system', icon: 'key', label: 'ผู้ดูแลระบบ' }) : ''}
           ${can('users') ? navLink({ nav: 'users', href: '#/users', icon: 'users', label: 'ผู้ใช้และสิทธิ์' }) : ''}
           ${navLink({ nav: 'settings', href: '#/settings', icon: 'settings', label: 'ตั้งค่า' })}
         </nav>
@@ -471,7 +508,7 @@
       </aside>
       <div class="content">
         <header class="top">
-          <div class="brand-mark" style="width:32px;height:32px">${ic('package')}</div>
+          <img class="brand-mark" src="/logo-192.png" alt="" style="width:32px;height:32px">
           <button type="button" class="btn store-pick" data-act="store"><span class="t1">CosmoStock</span><span class="t2"><span data-bind="store"></span>${ic('down', 14)}</span></button>
           <button type="button" class="btn btn-ghost btn-ico plain" data-act="scan" aria-label="สแกน">${ic('scan', 20)}</button>
           <a class="btn btn-ghost btn-ico bell" href="#/alerts" aria-label="แจ้งเตือน">${ic('bell', 20)}<span class="badge" data-bind="badge"></span></a>
@@ -489,16 +526,27 @@
     const count = store.alertCount;
     $$('[data-bind=store]').forEach((e) => { e.textContent = store.name; });
     $$('[data-bind=user]').forEach((e) => { e.textContent = user.name; });
-    $$('[data-bind=role]').forEach((e) => { e.textContent = store.roleLabel; });
+    $$('[data-bind=role]').forEach((e) => { e.textContent = user.superadmin ? 'ผู้ดูแลระบบ' : store.roleLabel; });
     $$('[data-bind=initial]').forEach((e) => { e.textContent = initial(user.name); });
     $$('[data-bind=badge], [data-bind=badge-tag]').forEach((e) => { e.textContent = count > 99 ? '99+' : String(count); e.hidden = !count; });
+  }
+
+  function storeOptions(stores, current, attr, tail) {
+    const groups = new Map();
+    for (const s of stores) {
+      if (!groups.has(s.orgId)) groups.set(s.orgId, { name: s.orgName, list: [] });
+      groups.get(s.orgId).list.push(s);
+    }
+    const head = groups.size > 1;
+    return [...groups.values()].map((g) => `${head ? `<div class="small muted" style="margin-top:4px;font-weight:600">${esc(g.name || 'ร้าน')}</div>` : ''}
+      ${g.list.map((s) => `<button type="button" class="store-opt ${s.id === current ? 'on' : ''}" ${attr}="${s.id}">${ic('store', 20)}<span class="nm">${esc(s.name)}<div class="small muted">${esc(head ? s.roleLabel : `${s.orgName || ''} · ${s.roleLabel}`)}</div></span>${tail(s)}</button>`).join('')}`).join('');
   }
 
   async function switchStore() {
     const { stores, store } = S.me;
     const id = await modal({
       title: 'เลือกร้านที่ต้องการจัดการ',
-      body: `<div class="stack" style="gap:8px">${stores.map((s) => `<button type="button" class="store-opt ${s.id === store.id ? 'on' : ''}" data-id="${s.id}">${ic('store', 20)}<span class="nm">${esc(s.name)}<div class="small muted">${esc(s.roleLabel)}</div></span>${s.id === store.id ? ic('check') : ''}</button>`).join('')}</div>
+      body: `<div class="stack" style="gap:8px">${storeOptions(stores, store.id, 'data-id', (s) => (s.id === store.id ? ic('check') : ''))}</div>
         <a href="#/settings" class="small" data-new>＋ เพิ่มร้าน / สาขาใหม่</a>`,
       onMount(dlg, close) {
         $$('[data-id]', dlg).forEach((b) => b.addEventListener('click', () => close(Number(b.dataset.id))));
@@ -522,14 +570,57 @@
 
   async function globalScan() {
     const code = await scanCode();
-    if (!code) return;
-    try {
-      const { product } = await GET('/api/lookup' + qs({ code }));
-      if (product) return go(`/products/${product.id}`);
-      if (can('product.edit') && await confirmBox('ไม่พบสินค้า', `ไม่พบสินค้าที่มีรหัส <b>${esc(code)}</b> ต้องการเพิ่มสินค้าใหม่ด้วยรหัสนี้หรือไม่?`, 'เพิ่มสินค้าใหม่')) {
-        go('/products/new' + qs({ barcode: code }));
-      } else if (!can('product.edit')) toast(`ไม่พบสินค้ารหัส ${code}`, 'err');
-    } catch (e) { toast(e.message, 'err'); }
+    if (code) lookupCode(code);
+  }
+
+  async function lookupCode(code) {
+    let d;
+    try { d = await GET('/api/lookup' + qs({ code })); } catch (e) { toast(e.message, 'err'); return; }
+    if (d.product) return showScanResult(d);
+    if (can('product.edit') && await confirmBox('ไม่พบสินค้า', `ไม่พบสินค้าที่มีรหัส <b>${esc(code)}</b> ต้องการเพิ่มสินค้าใหม่ด้วยรหัสนี้หรือไม่?`, 'เพิ่มสินค้าใหม่')) {
+      go('/products/new' + qs({ barcode: code }));
+    } else if (!can('product.edit')) toast(`ไม่พบสินค้ารหัส ${code}`, 'err');
+  }
+
+  async function showScanResult({ product: p, matchedPack: mp, scannedLot: sl, lots, recent, branches }) {
+    const days = S.me.store.expiryDays;
+    const breakdown = fmtPacks(p.qty, p.packs, p.unit);
+    const lotTag = (l) => (l.expiry ? (l.days <= days ? `<span class="tag ${l.days < 0 ? 'st-expired' : 'st-exp'}">${fmtD(l.expiry)} · ${daysLabel(l.days)}</span>` : `<span class="small muted">${fmtD(l.expiry)}</span>`) : '<span class="small muted">ไม่มีวันหมดอายุ</span>');
+    const multi = S.me.stores.length > 1;
+    const actions = [{ label: 'ดูรายละเอียด', value: 'detail' }];
+    if (can('stock.move')) {
+      if (!sl || sl.qty > 0) actions.push({ label: ic('out') + (sl ? 'จ่ายออกจากล็อตนี้' : 'จ่ายออก'), value: 'out' });
+      actions.push({ label: ic('in') + (sl ? 'รับเข้าล็อตนี้' : 'รับเข้า'), cls: 'btn-primary', value: 'in' });
+    }
+    const r = await modal({
+      title: 'ผลการสแกน',
+      wide: true,
+      body: `<div class="scan-res">
+        <div class="sr-head">${thumb(p, 'lg')}<div class="mid">
+          <div class="card-kicker" style="color:var(--color-accent-700)">${esc(p.category || 'ไม่ระบุหมวด')} · ${esc(p.sku)}</div>
+          <div class="card-title">${esc(p.name)}</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${sl ? `<span class="tag tag-accent">${ic('scan', 14)} สแกนได้: ล็อต ${esc(sl.lotNo || '-')}${sl.expiry ? ` · หมดอายุ ${fmtD(sl.expiry)}` : ''}</span>` : mp ? `<span class="tag tag-accent">${ic('scan', 14)} สแกนได้: ${esc(mp.name)} (${fmtN(mp.perQty)} ${esc(p.unit)})</span>` : `<span class="tag">${ic('scan', 14)} สแกนได้: ${esc(p.unit)}</span>`}${stTag(p.status)}</div>
+        </div></div>
+        <div class="sr-stock blueprint">${CORNERS}
+          <div class="small muted">คงเหลือที่ ${esc(S.me.store.name)}</div>
+          <div class="balance" style="font-size:40px">${fmtN(p.qty)} <small style="font-size:16px">${esc(p.unit)}</small></div>
+          ${breakdown ? `<div><b>${esc(breakdown)}</b></div>` : ''}
+          ${sl ? `<div class="small"><b>ล็อตนี้คงเหลือ ${fmtN(sl.qty)} ${esc(p.unit)}</b>${sl.days != null && sl.days < 0 ? ' · <span style="color:var(--color-accent-700)">หมดอายุแล้ว</span>' : ''}${!sl.id ? ' · ยังไม่เคยรับเข้าล็อตนี้' : ''}</div>` : ''}
+          ${mp && p.qty > 0 ? `<div class="small muted">คิดเป็น ${fmtN(Math.floor(p.qty / mp.perQty))} ${esc(mp.name)} เต็ม${p.qty % mp.perQty ? ` + ${fmtN(p.qty % mp.perQty)} ${esc(p.unit)}` : ''}</div>` : ''}
+          <div class="small muted">ราคาขาย ${mp?.price != null ? `${fmtB(mp.price)}/${esc(mp.name)} · ` : ''}${fmtB(p.price)}/${esc(p.unit)} · จุดสั่งซื้อ ${fmtN(p.reorderPoint)} ${esc(p.unit)}</div>
+        </div>
+        ${p.packs.length ? `<div class="chips" style="flex-wrap:wrap">${[...p.packs].reverse().map((k) => `<span class="chip ${mp?.id === k.id ? 'on' : ''}" style="pointer-events:none">1 ${esc(k.name)} = ${fmtN(k.perQty)} ${esc(p.unit)}</span>`).join('')}</div>` : ''}
+        ${lots.length ? `<div><div class="sr-h">ล็อต / วันหมดอายุ</div><div class="sr-rows">${[...lots].sort((a, b) => (b.id === sl?.id) - (a.id === sl?.id)).slice(0, 3).map((l) => `<div class="sr-row" ${l.id === sl?.id ? 'style="font-weight:700"' : ''}><span>${esc(l.lotNo || 'ไม่ระบุล็อต')}</span>${lotTag(l)}<b class="num">${fmtN(l.qty)}</b></div>`).join('')}
+          ${lots.length > 3 ? `<div class="small muted">และอีก ${lots.length - 3} ล็อต</div>` : ''}</div></div>` : ''}
+        ${multi ? `<div><div class="sr-h">สาขาอื่น</div>${branches.length
+          ? `<div class="sr-rows">${branches.map((b) => `<div class="sr-row"><span>${ic('store', 16)} ${esc(b.storeName)}</span>${stTag(b.status)}<b class="num">${fmtN(b.qty)} ${esc(b.unit)}</b></div>`).join('')}</div>`
+          : '<div class="small muted">สาขาอื่นยังไม่มีสินค้า SKU นี้</div>'}</div>` : ''}
+        ${recent.length ? `<div><div class="sr-h">ความเคลื่อนไหวล่าสุด</div><div class="list">${recent.slice(0, 3).map(mvLi).join('')}</div></div>` : ''}
+      </div>`,
+      actions,
+    });
+    if (r === 'detail') go(`/products/${p.id}`);
+    else if (r === 'in' || r === 'out') go(`/move/${r}` + qs({ product: p.id, pack: mp?.id, lotNo: sl?.lotNo, exp: sl?.expiry, lotId: r === 'out' ? sl?.id : '' }));
   }
 
   document.addEventListener('click', (e) => {
@@ -553,7 +644,7 @@
       <button class="btn btn-secondary" type="button" data-act="logout">${ic('logout')}ออกจากระบบ</button>
     </form>`);
     onSubmit($('#f'), async (d) => {
-      S.me = await POST('/api/stores', { name: d.name });
+      S.me = await POST('/api/stores', { kind: 'shop', name: d.name });
       go('/');
     });
   }
@@ -563,14 +654,14 @@
   function authLayout(inner) {
     return `<div class="auth">
       <div class="auth-hero">
-        <div class="brand"><div class="brand-mark">${ic('package', 24)}</div><span class="brand-name">CosmoStock</span></div>
+        <div class="brand"><img class="brand-mark" src="/logo-192.png" alt=""><span class="brand-name">CosmoStock</span></div>
         <div><h1>จัดการคลังง่าย<br>สต็อกแม่น<br>ธุรกิจเติบโต</h1>
         <p>ระบบจัดการคลังสินค้าเครื่องสำอาง ใช้ได้ทั้งมือถือ แท็บเล็ต และคอมพิวเตอร์</p></div>
         <div class="small" style="color:var(--color-accent-300)">© ${new Date().getFullYear() + 543} CosmoStock</div>
       </div>
       <div class="auth-side">
         <div class="auth-mhead">
-          <div class="brand-mark" style="width:48px;height:48px">${ic('package', 26)}</div>
+          <img class="brand-mark" src="/logo-192.png" alt="" style="width:48px;height:48px">
           <div><h1>CosmoStock</h1><p>จัดการคลังง่าย สต็อกแม่น ธุรกิจเติบโต</p></div>
         </div>
         ${inner}
@@ -651,7 +742,7 @@
     return `<${tag} class="li" ${m.deleted ? '' : `href="#/products/${m.productId}"`}>
       <span class="mv-ico ${m.type}">${ic(TYPE[m.type].icon)}</span>
       <div class="mid"><div class="t">${esc(m.name)}${m.deleted ? ' <span class="small muted">(ลบแล้ว)</span>' : ''}</div>
-        <div class="s">${fmtDT(m.at)} · ${esc(m.by || '—')} · ${esc(m.docNo)}</div>${m.note || m.lotInfo ? `<div class="s">${esc([m.lotInfo, m.note].filter(Boolean).join(' · '))}</div>` : ''}</div>
+        <div class="s">${fmtDT(m.at)} · ${esc(m.by || '—')} · ${esc(m.docNo)}</div>${m.note || m.lotInfo || m.packName ? `<div class="s">${esc([packNote(m), m.lotInfo, m.note].filter(Boolean).join(' · '))}</div>` : ''}</div>
       <div class="end"><div class="q ${m.qty > 0 ? 'pos' : 'neg'}">${signed(m.qty)}</div><div class="small muted">${fmtN(m.before)} → ${fmtN(m.after)}</div></div>
     </${tag}>`;
   }
@@ -661,7 +752,7 @@
       ${rows.map((m) => `<tr><td class="nowrap">${fmtDT(m.at)}</td>
         ${product ? `<td>${m.deleted ? esc(m.name) + ' <span class="small muted">(ลบแล้ว)</span>' : `<a href="#/products/${m.productId}" style="color:inherit">${esc(m.name)}</a>`}</td>` : ''}
         <td>${tyTag(m.type)}</td><td class="nowrap">${esc(m.docNo)}</td><td>${esc(m.by || '—')}</td>
-        <td class="right num ${m.qty > 0 ? 'pos' : 'neg'}" style="font-weight:600">${signed(m.qty)}</td><td class="right num">${fmtN(m.after)}</td>
+        <td class="right num ${m.qty > 0 ? 'pos' : 'neg'}" style="font-weight:600">${signed(m.qty)}${m.packName ? `<div class="small muted" style="font-weight:400">${esc(packNote(m))}</div>` : ''}</td><td class="right num">${fmtN(m.after)}</td>
         <td class="small muted">${esc([m.lotInfo, m.note].filter(Boolean).join(' · ')) || '—'}</td></tr>`).join('')}
     </tbody></table></div>`;
   }
@@ -781,14 +872,14 @@
           <tbody>${products.map((p) => `<tr>
             <td><div class="pn">${thumb(p, 'sm')}<a href="#/products/${p.id}">${esc(p.name)}</a></div></td>
             <td class="nowrap">${esc(p.sku)}</td><td>${esc(p.category || '—')}</td><td class="right num">${fmtB(p.price)}</td>
-            <td class="right num" style="font-weight:600">${fmtN(p.qty)} <span class="small muted">${esc(p.unit)}</span></td><td>${stTag(p.status)}</td>
+            <td class="right num" style="font-weight:600">${fmtN(p.qty)} <span class="small muted">${esc(p.unit)}</span>${fmtPacks(p.qty, p.packs, p.unit) ? `<div class="small muted" style="font-weight:400">${esc(fmtPacks(p.qty, p.packs, p.unit))}</div>` : ''}</td><td>${stTag(p.status)}</td>
             <td class="acts">
               ${can('stock.move') ? `<a class="btn btn-ghost btn-ico plain" href="#/move/in?product=${p.id}" title="รับเข้า">${ic('in')}</a>` : ''}
               ${editable ? `<a class="btn btn-ghost btn-ico plain" href="#/products/${p.id}/edit" title="แก้ไข">${ic('edit')}</a>` : ''}
               ${can('product.delete') ? `<button type="button" class="btn btn-ghost btn-ico plain" data-del="${p.id}" title="ลบ">${ic('trash')}</button>` : ''}
             </td></tr>`).join('')}</tbody></table></div></div>
         <div class="list only-mobile">${products.map((p) => `<a class="li" href="#/products/${p.id}">${thumb(p, '')}
-          <div class="mid"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.sku)} · ${esc(p.category || '—')}</div></div>
+          <div class="mid"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.sku)} · ${esc(p.category || '—')}</div>${fmtPacks(p.qty, p.packs, p.unit) ? `<div class="s">${esc(fmtPacks(p.qty, p.packs, p.unit))}</div>` : ''}</div>
           <div class="end"><span class="q">${fmtN(p.qty)}</span>${stTag(p.status)}</div></a>`).join('')}</div>`;
     };
 
@@ -829,14 +920,14 @@
           e.preventDefault();
           const code = q.value.trim();
           if (!code) return;
-          const { product } = await GET('/api/lookup' + qs({ code })).catch(() => ({}));
-          if (product) go(`/products/${product.id}`);
+          const d = await GET('/api/lookup' + qs({ code })).catch(() => ({}));
+          if (d.product) showScanResult(d);
         });
         $('#scan', root).addEventListener('click', async () => {
           const code = await scanCode();
           if (!code) return;
-          const { product } = await GET('/api/lookup' + qs({ code })).catch(() => ({}));
-          if (product) return go(`/products/${product.id}`);
+          const d = await GET('/api/lookup' + qs({ code })).catch(() => ({}));
+          if (d.product) return showScanResult(d);
           q.value = code; state.q = code; reload();
           toast(`ไม่พบสินค้ารหัส ${code}`, 'err');
         });
@@ -855,8 +946,10 @@
           if (p && await deleteProduct(p)) reload();
         });
         $('#csv', root).addEventListener('click', () => downloadCSV(`cosmostock-products-${ymd(new Date())}.csv`, [
-          ['SKU', 'ชื่อสินค้า', 'หมวดหมู่', 'บาร์โค้ด', 'หน่วย', 'ราคาทุน', 'ราคาขาย', 'จุดสั่งซื้อ', 'คงเหลือ', 'มูลค่าคงคลัง', 'สถานะ', 'หมดอายุใกล้สุด'],
-          ...products.map((p) => [p.sku, p.name, p.category, p.barcode, p.unit, p.cost, p.price, p.reorderPoint, p.qty, p.qty * p.cost, STATUS[p.status], p.nextExpiry || '']),
+          ['SKU', 'ชื่อสินค้า', 'หมวดหมู่', 'บาร์โค้ด', 'หน่วย', 'ขนาดบรรจุ', 'ราคาทุน', 'ราคาขาย', 'จุดสั่งซื้อ', 'คงเหลือ', 'ยอดแตกหน่วย', 'มูลค่าคงคลัง', 'สถานะ', 'หมดอายุใกล้สุด'],
+          ...products.map((p) => [p.sku, p.name, p.category, p.barcode, p.unit,
+            (p.packs || []).map((k) => `${k.name}=${k.perQty}${p.unit}${k.barcode ? ' [' + k.barcode + ']' : ''}`).join('; '),
+            p.cost, p.price, p.reorderPoint, p.qty, fmtPacks(p.qty, p.packs, p.unit), p.qty * p.cost, STATUS[p.status], p.nextExpiry || '']),
         ]));
       },
     };
@@ -883,7 +976,7 @@
           </div>
         </div>
         <div class="pstats blueprint">${CORNERS}
-          <div><div class="small muted">คงเหลือ</div><div class="balance" style="font-size:30px">${fmtN(p.qty)} <small style="font-size:15px">${esc(p.unit)}</small></div></div>
+          <div><div class="small muted">คงเหลือ</div><div class="balance" style="font-size:30px">${fmtN(p.qty)} <small style="font-size:15px">${esc(p.unit)}</small></div>${fmtPacks(p.qty, p.packs, p.unit) ? `<div class="small muted">${esc(fmtPacks(p.qty, p.packs, p.unit))}</div>` : ''}</div>
           <div><div class="small muted">มูลค่าคงคลัง</div><div class="balance" style="font-size:30px">${fmtB0(p.qty * p.cost)}</div></div>
           <div><div class="small muted">ล็อตที่มีอยู่</div><div class="balance" style="font-size:30px">${fmtN(lots.length)}</div></div>
           <div style="${expHot ? 'background:var(--color-accent-2-100)' : ''}"><div class="small muted">หมดอายุใกล้สุด</div><div class="balance" style="font-size:26px;${expHot ? 'color:var(--color-accent-2-700)' : ''}">${exp ? fmtD(exp) : '—'}</div>${exp ? `<div class="small muted">${daysLabel(p.daysToExpiry)}</div>` : ''}</div>
@@ -894,6 +987,14 @@
           ${can('stock.adjust') ? `<a class="btn btn-secondary" href="#/move/adj?product=${p.id}">${ic('adjust')}ปรับยอด</a>` : ''}
           <button type="button" class="btn btn-secondary" id="print">${ic('printer')}พิมพ์ฉลาก QR</button>
         </div>
+        ${p.packs.length ? `<div class="card blueprint">${CORNERS}
+          <div class="card-title">ขนาดบรรจุ</div>
+          <table class="table rtable"><thead><tr><th>หน่วย</th><th class="right">บรรจุ</th><th>บาร์โค้ด</th><th class="right">ราคาขาย</th></tr></thead><tbody>
+            <tr><td class="lead" data-label="">${esc(p.unit)} <span class="small muted">(หน่วยย่อย)</span></td><td class="right num" data-label="บรรจุ">1 ${esc(p.unit)}</td>
+              <td data-label="บาร์โค้ด" class="mono">${esc(p.barcode || '—')}</td><td class="right num" data-label="ราคาขาย">${fmtB(p.price)}</td></tr>
+            ${p.packs.map((k) => `<tr><td class="lead" data-label="">${esc(k.name)}</td><td class="right num" data-label="บรรจุ">${fmtN(k.perQty)} ${esc(p.unit)}</td>
+              <td data-label="บาร์โค้ด" class="mono">${esc(k.barcode || '—')}</td><td class="right num" data-label="ราคาขาย">${k.price != null ? fmtB(k.price) : '—'}</td></tr>`).join('')}
+          </tbody></table></div>` : ''}
         <div class="grid-2e">
           <div class="card blueprint">${CORNERS}
             <div class="card-head"><div class="card-title">ประวัติการเคลื่อนไหว</div>${historyTotal > history.length ? `<a class="small" href="#/history?productId=${p.id}">ดูทั้งหมด (${fmtN(historyTotal)})</a>` : ''}</div>
@@ -901,10 +1002,11 @@
           </div>
           <div class="card blueprint">${CORNERS}
             <div class="card-title">ล็อตสินค้า</div>
-            ${lots.length ? `<table class="table rtable"><thead><tr><th>ล็อต</th><th>รับเข้า</th><th>หมดอายุ</th><th class="right">คงเหลือ</th></tr></thead><tbody>
+            ${lots.length ? `<table class="table rtable"><thead><tr><th>ล็อต</th><th>รับเข้า</th><th>หมดอายุ</th><th class="right">คงเหลือ</th><th class="right">QR</th></tr></thead><tbody>
               ${lots.map((l) => `<tr><td class="lead" data-label="">${esc(l.lotNo || 'ไม่ระบุล็อต')}</td><td data-label="รับเข้า">${fmtD(ymd(new Date(l.receivedAt)))}</td>
                 <td data-label="หมดอายุ">${l.expiry ? (l.days <= S.me.store.expiryDays ? `<span class="tag ${l.days < 0 ? 'st-expired' : 'st-exp'}">${fmtD(l.expiry)} · ${daysLabel(l.days)}</span>` : fmtD(l.expiry)) : '—'}</td>
-                <td class="right num" data-label="คงเหลือ">${fmtN(l.qty)}</td></tr>`).join('')}</tbody></table>`
+                <td class="right num" data-label="คงเหลือ">${fmtN(l.qty)}</td>
+                <td class="right" data-label="QR">${lotPrintable(l) ? `<button type="button" class="btn btn-secondary btn-ico" data-lotqr="${l.id}" title="พิมพ์ฉลาก QR ล็อตนี้" aria-label="พิมพ์ฉลาก QR ล็อต ${esc(l.lotNo || fmtD(l.expiry))}">${ic('printer', 18)}</button>` : '<span class="small muted">—</span>'}</td></tr>`).join('')}</tbody></table>`
               : empty('package', 'ยังไม่มีสินค้าในคลัง')}
             <div class="small muted">จ่ายออกจะตัดจากล็อตที่หมดอายุก่อนเสมอ (FEFO)</div>
           </div>
@@ -912,7 +1014,8 @@
       </div>`,
       mount(root) {
         qrSvg(p.barcode || p.sku).then((svg) => { const el = $('#qr', root); if (el) el.innerHTML = svg; }).catch(() => {});
-        $('#print', root).addEventListener('click', () => printLabels(p));
+        $('#print', root).addEventListener('click', () => printLabels(p, lots));
+        $$('[data-lotqr]', root).forEach((b) => b.addEventListener('click', () => printLabels(p, lots, Number(b.dataset.lotqr))));
         $('#del', root)?.addEventListener('click', async () => { if (await deleteProduct(p)) go('/products'); });
       },
     };
@@ -953,6 +1056,12 @@
             ${f('reorderPoint', 'จุดสั่งซื้อ (แจ้งเตือนเมื่อเหลือไม่เกิน)', 'type="number" inputmode="numeric" min="0" step="1"')}
           </div>
           <label class="check"><input type="checkbox" name="trackExpiry" id="track" ${p.trackExpiry ? 'checked' : ''}>ติดตามล็อตและวันหมดอายุ</label>
+          <div class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px">
+            <div class="card-kicker" style="color:var(--color-accent-700)">ขนาดบรรจุ (ไม่บังคับ)</div>
+            <div class="small muted">เช่น แพ็ค = 6 <span class="u">${esc(p.unit)}</span>, ลัง = 24 <span class="u">${esc(p.unit)}</span> — แต่ละขนาดมีบาร์โค้ดของตัวเองได้ สแกนบาร์โค้ดลังตอนรับเข้า ระบบจะบวกตามจำนวนที่บรรจุให้อัตโนมัติ</div>
+            <div id="packs" class="stack" style="gap:10px"></div>
+            <button type="button" class="btn btn-secondary" id="addpack" style="align-self:flex-start">${ic('plus')}เพิ่มขนาดบรรจุ</button>
+          </div>
           ${editing ? '' : `<div class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px">
             <div class="card-kicker" style="color:var(--color-accent-700)">ยอดยกมา (ไม่บังคับ)</div>
             <div class="row3">
@@ -993,10 +1102,56 @@
           if (code) $('#f-barcode', root).value = code;
         });
         $('#f-barcode', root).addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+
+        const MAX_PACKS = 5;
+        const packBox = $('#packs', root);
+        const unitInput = $('#f-unit', root);
+        const unitName = () => unitInput.value.trim() || 'ชิ้น';
+        let packSeq = 0;
+        const syncPacks = () => {
+          $('#addpack', root).hidden = packBox.children.length >= MAX_PACKS;
+          $$('.u', root).forEach((e) => { e.textContent = unitName(); });
+        };
+        const addPack = (k = {}) => {
+          const id = `pk${++packSeq}`;
+          const row = document.createElement('div');
+          row.className = 'pack-row';
+          row.innerHTML = `
+            <div class="field"><label for="${id}-n">ชื่อหน่วย</label><input class="input" id="${id}-n" data-k="name" maxlength="20" placeholder="เช่น แพ็ค, ลัง" value="${esc(k.name || '')}"></div>
+            <div class="field"><label for="${id}-q">บรรจุกี่ <span class="u">${esc(unitName())}</span></label><input class="input" id="${id}-q" data-k="perQty" type="number" inputmode="numeric" min="2" step="1" placeholder="เช่น 24" value="${esc(k.perQty || '')}"></div>
+            <div class="field pk-bc"><label for="${id}-b">บาร์โค้ดหน่วยนี้</label><div style="display:flex;gap:8px">
+              <input class="input" id="${id}-b" data-k="barcode" maxlength="64" inputmode="numeric" placeholder="สแกนหรือพิมพ์" value="${esc(k.barcode || '')}" style="flex:1;min-width:0">
+              <button type="button" class="btn btn-secondary btn-ico" data-scan aria-label="สแกนบาร์โค้ดหน่วยนี้">${ic('scan', 20)}</button></div></div>
+            <div class="field"><label for="${id}-p">ราคาขาย (฿)</label><input class="input" id="${id}-p" data-k="price" type="number" inputmode="decimal" min="0" step="0.01" placeholder="ไม่บังคับ" value="${esc(k.price ?? '')}"></div>
+            <button type="button" class="btn btn-ghost btn-ico plain pk-rm" data-rm aria-label="ลบขนาดบรรจุนี้">${ic('trash')}</button>`;
+          packBox.appendChild(row);
+          syncPacks();
+          return row;
+        };
+        (p.packs || []).slice().reverse().forEach(addPack);
+        syncPacks();
+        $('#addpack', root).addEventListener('click', () => $('[data-k=name]', addPack()).focus());
+        unitInput.addEventListener('input', syncPacks);
+        packBox.addEventListener('click', async (e) => {
+          const row = e.target.closest('.pack-row');
+          if (!row) return;
+          if (e.target.closest('[data-rm]')) { row.remove(); syncPacks(); return; }
+          if (e.target.closest('[data-scan]')) {
+            const code = await scanCode('สแกนบาร์โค้ดของหน่วยบรรจุ');
+            if (code) $('[data-k=barcode]', row).value = code;
+          }
+        });
+        packBox.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('input')) e.preventDefault(); });
+        const readPacks = () => $$('.pack-row', packBox).map((row) => {
+          const v = (k) => $(`[data-k=${k}]`, row).value.trim();
+          return { name: v('name'), perQty: v('perQty') === '' ? '' : Number(v('perQty')), barcode: v('barcode'), price: v('price') };
+        }).filter((k) => k.name || k.perQty || k.barcode || k.price);
+
         onSubmit(form, async (d) => {
           const body = {
             name: d.name, sku: d.sku, barcode: d.barcode, category: d.category, unit: d.unit,
             cost: d.cost, price: d.price, reorderPoint: d.reorderPoint === '' ? 0 : Number(d.reorderPoint), trackExpiry: !!d.trackExpiry,
+            packs: readPacks(),
           };
           if (image !== undefined) body.image = image;
           if (editing) {
@@ -1030,9 +1185,16 @@
     const allowed = { in: can('stock.move'), out: can('stock.move'), adj: can('stock.adjust') };
     if (!allowed[type]) return { html: forbidden() };
     const T = MOVE[type];
-    const st = { product: null, lots: [] };
+    const st = { product: null, lots: [], lot: null, packId: type !== 'adj' && Number(query.pack) || null };
     if (query.product) {
       try { const d = await GET(`/api/products/${query.product}`); st.product = d.product; st.lots = d.lots; } catch { /* product gone */ }
+    }
+    // มาจากการสแกน QR ล็อต: out = ตัดจากล็อตนั้นโดยตรง, in = กรอกเลขล็อต/วันหมดอายุให้
+    if (st.product && type !== 'adj' && (query.lotNo || query.exp || query.lotId)) {
+      if (type === 'out') {
+        const row = st.lots.find((l) => l.id === Number(query.lotId));
+        if (row) st.lot = { id: row.id, lotNo: row.lotNo, expiry: row.expiry, qty: row.qty };
+      } else st.lot = { id: null, lotNo: query.lotNo || '', expiry: query.exp || '' };
     }
     return {
       html: `<div class="page narrow">
@@ -1053,17 +1215,32 @@
         const renderTabs = () => {
           $('#tabs', root).innerHTML = Object.entries(MOVE).map(([t, m]) => `<a class="seg-opt ${t === type ? 'on' : ''} ${allowed[t] ? '' : 'disabled'}" href="#/move/${t}${st.product ? '?product=' + st.product.id : ''}">${m.short}</a>`).join('');
         };
-        const pick = async (id) => {
+        const curPack = () => (type === 'adj' ? null : st.product?.packs.find((k) => k.id === st.packId) || null);
+        const lotFromScan = (sl) => {
+          if (!sl || type === 'adj') return null;
+          if (type === 'out') {
+            if (!sl.id || sl.qty <= 0) { toast('ล็อตนี้ไม่มีของคงเหลือ ระบบจะตัดตามลำดับหมดอายุก่อน (FEFO) แทน', 'err'); return null; }
+            return { id: sl.id, lotNo: sl.lotNo, expiry: sl.expiry, qty: sl.qty };
+          }
+          return { id: null, lotNo: sl.lotNo, expiry: sl.expiry || '' };
+        };
+        const pick = async (id, packId = null, lot = null) => {
           try {
             const d = await GET(`/api/products/${id}`);
-            st.product = d.product; st.lots = d.lots;
-            replaceQuery(`/move/${type}`, { product: id });
+            st.product = d.product; st.lots = d.lots; st.lot = lot;
+            st.packId = type !== 'adj' && packId || null;
+            replaceQuery(`/move/${type}`, { product: id, pack: st.packId });
             renderAll();
           } catch (e) { toast(e.message, 'err'); }
         };
         const lookupAndPick = async (code) => {
-          const { product } = await GET('/api/lookup' + qs({ code })).catch(() => ({}));
-          if (product) { pick(product.id); return true; }
+          const { product, matchedPack, scannedLot } = await GET('/api/lookup' + qs({ code })).catch(() => ({}));
+          if (product) {
+            if (scannedLot && type !== 'adj') toast(`สแกนได้ล็อต ${scannedLot.lotNo || fmtD(scannedLot.expiry)}`);
+            else if (matchedPack && type !== 'adj') toast(`สแกนได้ ${matchedPack.name} (${fmtN(matchedPack.perQty)} ${product.unit})`);
+            pick(product.id, matchedPack?.id, lotFromScan(scannedLot));
+            return true;
+          }
           toast(`ไม่พบสินค้ารหัส ${code}`, 'err');
           return false;
         };
@@ -1073,39 +1250,65 @@
           if (p) {
             box.innerHTML = `<div class="card blueprint picked">${CORNERS}${thumb(p)}
               <div class="mid"><div class="card-title">${esc(p.name)}</div><div class="card-meta">SKU ${esc(p.sku)}${p.barcode ? ' · ' + esc(p.barcode) : ''}</div></div>
-              <div class="right"><div class="small muted">คงเหลือ</div><div class="balance">${fmtN(p.qty)}</div></div>
+              <div class="right"><div class="small muted">คงเหลือ</div><div class="balance">${fmtN(p.qty)}</div>${fmtPacks(p.qty, p.packs, p.unit) ? `<div class="small muted">${esc(fmtPacks(p.qty, p.packs, p.unit))}</div>` : ''}</div>
               <button type="button" class="btn btn-ghost btn-ico plain" id="unpick" aria-label="เปลี่ยนสินค้า">${ic('x', 20)}</button></div>`;
-            $('#unpick', box).addEventListener('click', () => { st.product = null; replaceQuery(`/move/${type}`, {}); renderAll(); $('#ps', root)?.focus(); });
+            $('#unpick', box).addEventListener('click', () => { st.product = null; st.packId = null; st.lot = null; replaceQuery(`/move/${type}`, {}); renderAll(); $('#ps', root)?.focus(); });
             return;
           }
           box.innerHTML = `<div class="picker"><div style="display:flex;gap:8px">
               <div class="input-icon">${ic('search')}<input class="input" id="ps" type="search" placeholder="พิมพ์ชื่อ / SKU หรือยิงบาร์โค้ด" autocomplete="off"></div>
               <button type="button" class="btn btn-primary btn-ico" id="pscan" aria-label="สแกน">${ic('scan', 20)}</button></div>
             <div class="picker-list" id="pl" hidden></div></div>
-            <div class="small muted" style="margin-top:6px">${ic('camera', 14)} กดปุ่มสแกนเพื่อใช้กล้องมือถือ หรือใช้เครื่องยิงบาร์โค้ดที่ช่องค้นหา</div>`;
+            <div class="small muted" style="margin-top:6px">แตะช่องค้นหาเพื่อเลือกจากรายการ หรือพิมพ์ชื่อ / SKU · ${ic('camera', 14)} สแกนบาร์โค้ด/QR เป็นทางเลือก ไม่บังคับ</div>`;
           const input = $('#ps', box);
           const list = $('#pl', box);
           let results = [];
           const search = debounce(async () => {
             const q = input.value.trim();
-            if (!q) { list.hidden = true; return; }
-            results = (await GET('/api/products' + qs({ q })).catch(() => ({ products: [] }))).products.slice(0, 8);
+            results = (await GET('/api/products' + qs({ q })).catch(() => ({ products: [] }))).products.slice(0, q ? 12 : 40);
             list.innerHTML = results.length
-              ? results.map((r) => `<button type="button" data-id="${r.id}">${thumb(r, 'sm')}<span style="flex:1;min-width:0"><div>${esc(r.name)}</div><div class="small muted">${esc(r.sku)} · คงเหลือ ${fmtN(r.qty)}</div></span>${stTag(r.status)}</button>`).join('')
+              ? results.map((r) => {
+                // ปุ่มด่วน: รับเข้า/จ่ายออกได้ทันทีจากรายการ (รับเข้าสินค้าที่ต้องระบุล็อต/วันหมดอายุ และปรับยอด ใช้ฟอร์มเต็ม)
+                const quick = type !== 'adj' && !(type === 'in' && r.trackExpiry) && !(type === 'out' && r.qty <= 0);
+                return `<div class="prow"><button type="button" class="pmain" data-id="${r.id}">${thumb(r, 'sm')}<span style="flex:1;min-width:0"><div>${esc(r.name)}</div><div class="small muted">${esc(r.sku)} · คงเหลือ ${fmtN(r.qty)} ${esc(r.unit)}</div></span>${stTag(r.status)}</button>
+                  ${quick ? `<div class="pquick"><input class="input num" type="number" inputmode="numeric" min="1" step="1" value="1" data-q="${r.id}" aria-label="จำนวน (${esc(r.unit)})"><button type="button" class="btn btn-primary" data-go="${r.id}">${ic(type, 18)}${type === 'in' ? 'รับเข้า' : 'จ่ายออก'}</button></div>` : ''}</div>`;
+              }).join('')
               : '<div class="empty" style="padding:16px">ไม่พบสินค้า</div>';
             list.hidden = false;
           }, 200);
           input.addEventListener('input', search);
+          input.addEventListener('focus', search);
           input.addEventListener('keydown', async (e) => {
             if (e.key !== 'Enter') return;
             e.preventDefault();
             const code = input.value.trim();
             if (!code) return;
-            const { product } = await GET('/api/lookup' + qs({ code })).catch(() => ({}));
-            if (product) pick(product.id);
+            const { product, matchedPack, scannedLot } = await GET('/api/lookup' + qs({ code })).catch(() => ({}));
+            if (product) pick(product.id, matchedPack?.id, lotFromScan(scannedLot));
             else if (results[0]) pick(results[0].id);
           });
-          list.addEventListener('click', (e) => { const b = e.target.closest('[data-id]'); if (b) pick(Number(b.dataset.id)); });
+          const quickMove = async (id, btn) => {
+            const qIn = $(`[data-q="${id}"]`, list);
+            const qty = Number(qIn?.value);
+            if (!Number.isInteger(qty) || qty < 1) { toast('กรุณากรอกจำนวนเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป', 'err'); qIn?.focus(); return; }
+            btn.disabled = true;
+            try {
+              const r = await POST('/api/movements', { type, productId: id, qty, note: '' });
+              toast(`บันทึก ${r.docNo} แล้ว · ${r.name} ${type === 'in' ? '+' : '−'}${fmtN(Math.abs(r.qty))} ${r.unit} · คงเหลือ ${fmtN(r.after)} ${r.unit}`);
+              refreshMe();
+              await search();
+            } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+          };
+          list.addEventListener('click', (e) => {
+            const g = e.target.closest('[data-go]');
+            if (g) return quickMove(Number(g.dataset.go), g);
+            const b = e.target.closest('[data-id]'); if (b) pick(Number(b.dataset.id));
+          });
+          list.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' || !e.target.matches('[data-q]')) return;
+            e.preventDefault();
+            quickMove(Number(e.target.dataset.q), $(`[data-go="${e.target.dataset.q}"]`, list));
+          });
           document.addEventListener('click', function off(e) {
             if (!list.isConnected) return document.removeEventListener('click', off);
             if (!box.contains(e.target)) list.hidden = true;
@@ -1120,28 +1323,56 @@
           const p = st.product;
           const box = $('#fields', root);
           if (!p) {
-            box.innerHTML = `<div class="card blueprint">${CORNERS}${empty('scan', 'เลือกสินค้าด้วยการค้นหาหรือสแกนบาร์โค้ดก่อน')}</div>`;
+            box.innerHTML = `<div class="card blueprint">${CORNERS}${empty('search', 'เลือกสินค้าจากช่องค้นหาด้านบนก่อน (สแกนบาร์โค้ดก็ได้ แต่ไม่จำเป็น)')}</div>`;
             $('#go', root).disabled = true;
             $('#bal', root).textContent = '—';
             return;
           }
           $('#go', root).disabled = false;
           const startQty = type === 'adj' ? p.qty : 1;
+          const pk = curPack();
+          const units = type !== 'adj' && p.packs.length
+            ? `<div class="field"><label>หน่วยที่ทำรายการ</label><div class="seg unit-seg" id="units">
+                <button type="button" class="btn btn-secondary seg-opt ${pk ? '' : 'on'}" data-pack="">${esc(p.unit)}</button>
+                ${[...p.packs].reverse().map((k) => `<button type="button" class="btn btn-secondary seg-opt ${pk?.id === k.id ? 'on' : ''}" data-pack="${k.id}">${esc(k.name)} <span class="small">×${fmtN(k.perQty)}</span></button>`).join('')}
+              </div></div>` : '';
           box.innerHTML = `
-            ${type === 'adj' ? `<div class="small muted">ยอดในระบบตอนนี้ <b style="color:var(--color-text)">${fmtN(p.qty)} ${esc(p.unit)}</b> — กรอกจำนวนที่นับได้จริง ระบบจะคำนวณส่วนต่างให้</div>` : ''}
-            <div class="field"><label for="m-qty">${T.qty} (${esc(p.unit)})</label>
+            ${type === 'adj' ? `<div class="small muted">ยอดในระบบตอนนี้ <b style="color:var(--color-text)">${fmtN(p.qty)} ${esc(p.unit)}</b> — กรอกจำนวนที่นับได้จริง (เป็น${esc(p.unit)}) ระบบจะคำนวณส่วนต่างให้</div>` : ''}
+            ${units}
+            <div class="field"><label for="m-qty">${T.qty} (${esc(pk ? pk.name : p.unit)})</label>
               <div class="stepper"><button type="button" class="btn" data-step="-1" aria-label="ลด">${ic('minus', 20)}</button>
               <input class="input num" id="m-qty" name="${type === 'adj' ? 'newQty' : 'qty'}" type="number" inputmode="numeric" min="${type === 'adj' ? 0 : 1}" step="1" value="${startQty}">
-              <button type="button" class="btn" data-step="1" aria-label="เพิ่ม">${ic('plus', 20)}</button></div></div>
-            ${type === 'in' ? lotFields(p.trackExpiry) : ''}
+              <button type="button" class="btn" data-step="1" aria-label="เพิ่ม">${ic('plus', 20)}</button></div>
+              ${pk ? '<div class="small muted" id="m-eq"></div>' : ''}</div>
+            ${type === 'in' ? lotFields(p.trackExpiry || !!st.lot) : ''}
             ${type === 'adj' ? lotFields(false) : ''}
-            ${type === 'out' && st.lots.some((l) => l.lotNo || l.expiry) ? `<div class="small muted">ระบบจะตัดจากล็อตที่หมดอายุก่อน: ${st.lots.slice(0, 3).map((l) => `${esc(l.lotNo || 'ไม่ระบุล็อต')} (${fmtN(l.qty)}${l.expiry ? ', ' + fmtD(l.expiry) : ''})`).join(' → ')}</div>` : ''}
+            ${type === 'out' && st.lots.some((l) => l.qty > 0 && (l.lotNo || l.expiry)) ? `<div class="field"><label for="m-lotsel">ตัดจากล็อต</label>
+              <select class="input" id="m-lotsel"><option value="">อัตโนมัติ — ล็อตที่หมดอายุก่อน (FEFO)</option>${st.lots.filter((l) => l.qty > 0).map((l) => `<option value="${l.id}" ${st.lot?.id === l.id ? 'selected' : ''}>${esc(l.lotNo || 'ไม่ระบุล็อต')} · คงเหลือ ${fmtN(l.qty)}${l.expiry ? ' · หมดอายุ ' + fmtD(l.expiry) : ''}</option>`).join('')}</select></div>` : ''}
+            ${type === 'out' && st.lots.some((l) => l.lotNo || l.expiry) ? `<div class="small muted" id="fefo-note" ${st.lot ? 'hidden' : ''}>ถ้าไม่เลือกล็อต ระบบจะตัดจากล็อตที่หมดอายุก่อน: ${st.lots.slice(0, 3).map((l) => `${esc(l.lotNo || 'ไม่ระบุล็อต')} (${fmtN(l.qty)}${l.expiry ? ', ' + fmtD(l.expiry) : ''})`).join(' → ')}</div>` : ''}
             <div class="field"><label for="m-note">${T.note}</label>
               <div class="reason-chips" style="margin-bottom:8px">${T.reasons.map((r) => `<button type="button" class="chip" data-reason="${esc(r)}">${esc(r)}</button>`).join('')}</div>
               <input class="input" id="m-note" name="note" maxlength="200" ${type === 'adj' ? 'required' : ''}></div>`;
+          if (type === 'in' && st.lot) { $('#m-lot', box).value = st.lot.lotNo; $('#m-exp', box).value = st.lot.expiry; }
+          $('#m-lotsel', box)?.addEventListener('change', (e) => {
+            const l = st.lots.find((x) => x.id === Number(e.target.value));
+            st.lot = l ? { id: l.id, lotNo: l.lotNo, expiry: l.expiry, qty: l.qty } : null;
+            $('#fefo-note', box)?.toggleAttribute('hidden', !!st.lot);
+          });
+          $('#m-lot', box)?.addEventListener('input', (e) => {
+            const l = st.lots.find((x) => x.lotNo && x.lotNo === e.target.value.trim() && x.expiry);
+            if (l && !$('#m-exp', box).value) $('#m-exp', box).value = l.expiry;
+          });
           const qty = $('#m-qty', box);
+          $('#units', box)?.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-pack]');
+            if (!b) return;
+            st.packId = Number(b.dataset.pack) || null;
+            replaceQuery(`/move/${type}`, { product: p.id, pack: st.packId });
+            renderFields();
+          });
           const update = () => {
-            const n = Math.max(0, Math.floor(Number(qty.value) || 0));
+            const n = Math.max(0, Math.floor(Number(qty.value) || 0)) * (pk ? pk.perQty : 1);
+            if (pk) $('#m-eq', box).textContent = `= ${fmtN(n)} ${p.unit}`;
             const after = type === 'in' ? p.qty + n : type === 'out' ? p.qty - n : n;
             const diff = after - p.qty;
             $('#bal', root).innerHTML = `${fmtN(p.qty)} → <span class="${after < 0 ? 'neg' : diff >= 0 ? 'pos' : 'neg'}">${fmtN(after)}</span>${type === 'adj' ? ` <span class="small muted">(${signed(diff)})</span>` : ''}`;
@@ -1166,10 +1397,14 @@
           if (type === 'adj') {
             body.newQty = Number(d.newQty);
             if (!body.note.trim()) throw new Error('กรุณาระบุเหตุผลการปรับยอด');
-          } else body.qty = Number(d.qty);
+          } else {
+            body.qty = Number(d.qty);
+            if (curPack()) body.packId = curPack().id;
+            if (type === 'out' && st.lot?.id) body.lotId = st.lot.id;
+          }
           const r = await POST('/api/movements', body);
-          toast(`บันทึก ${r.docNo} แล้ว · ${r.name} คงเหลือ ${fmtN(r.after)} ${r.unit}`);
-          await pick(st.product.id);
+          toast(`บันทึก ${r.docNo} แล้ว · ${r.packName ? `${fmtN(r.packCount)} ${r.packName} = ` : ''}${fmtN(Math.abs(r.qty))} ${r.unit} · คงเหลือ ${fmtN(r.after)} ${r.unit}`);
+          await pick(st.product.id, st.packId);
           refreshMe();
         });
       },
@@ -1245,8 +1480,8 @@
           try {
             const d = await GET('/api/movements' + apiQuery({ limit: 1000 }));
             downloadCSV(`cosmostock-history-${ymd(new Date())}.csv`, [
-              ['วันเวลา', 'เลขที่', 'ประเภท', 'SKU', 'สินค้า', 'จำนวน', 'ก่อน', 'หลัง', 'ล็อต', 'วันหมดอายุ', 'หมายเหตุ', 'ผู้ทำรายการ'],
-              ...d.rows.map((m) => [fmtDTY(m.at), m.docNo, TYPE[m.type].label, m.sku, m.name, m.qty, m.before, m.after, m.lotInfo || '', m.expiry || '', m.note || '', m.by || '']),
+              ['วันเวลา', 'เลขที่', 'ประเภท', 'SKU', 'สินค้า', 'จำนวน', 'หน่วยบรรจุที่ใช้', 'ก่อน', 'หลัง', 'ล็อต', 'วันหมดอายุ', 'หมายเหตุ', 'ผู้ทำรายการ'],
+              ...d.rows.map((m) => [fmtDTY(m.at), m.docNo, TYPE[m.type].label, m.sku, m.name, m.qty, packNote(m), m.before, m.after, m.lotInfo || '', m.expiry || '', m.note || '', m.by || '']),
             ]);
           } catch (e) { toast(e.message, 'err'); }
         });
@@ -1441,42 +1676,104 @@
 
   async function viewUsers() {
     const d = await GET('/api/members');
-    const roleOpts = (sel) => Object.entries(d.roles).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+    const roleBy = (k) => d.roles.find((r) => r.key === k);
+    const roleOpts = (sel) => d.roles.map((r) => `<option value="${esc(r.key)}" ${r.key === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+    const multi = d.stores.length > 1;
+    const branchCell = (m) => {
+      if (m.allBranches) return `<span class="tag tag-accent">ทุกสาขา (${d.stores.length})</span>`;
+      const names = m.branches.map((b) => esc(b.name)).join(', ');
+      const single = roleBy(m.role)?.scope === 'single';
+      return `<span class="small">${names}</span>${multi ? `<button type="button" class="btn btn-ghost plain small" data-branches="${m.id}" style="min-height:32px;padding:0 6px">${ic('store', 16)}${single ? 'ย้ายสาขา' : 'กำหนดสาขา'}</button>` : ''}`;
+    };
+    const pickBranches = (title, selected, hint, single = false) => modal({
+      title,
+      body: `<div class="small muted">${hint}</div>
+        <div class="stack" style="gap:4px">${d.stores.map((s) => `<label class="check"><input type="${single ? 'radio' : 'checkbox'}" name="pb" value="${s.id}" ${selected.includes(s.id) ? 'checked' : ''}>${esc(s.name)}</label>`).join('')}</div>
+        <div class="form-err" hidden></div>`,
+      actions: [{ label: 'ยกเลิก' }, { label: 'บันทึกสาขา', cls: 'btn-primary', onClick: (dlg) => {
+        const ids = $$('input[name=pb]:checked', dlg).map((c) => Number(c.value));
+        if (!ids.length) throw new Error('กรุณาเลือกอย่างน้อย 1 สาขา');
+        return ids;
+      } }],
+    });
     return {
       html: `<div class="page">
         <div class="page-head">
-          <div class="ttl"><h2>ผู้ใช้และสิทธิ์</h2><div class="sub">${esc(S.me.store.name)} — ผู้ใช้เห็นเฉพาะข้อมูลของร้านที่ได้รับเชิญ</div></div>
+          <div class="ttl"><h2>ผู้ใช้และสิทธิ์</h2><div class="sub">${esc(S.me.store.orgName || S.me.store.name)} — กำหนดบทบาทและสิทธิ์ของร้านนี้ได้เอง เจ้าของร้านเห็นทุกสาขาเสมอ</div></div>
           <div class="acts"><button type="button" class="btn btn-primary blueprint" id="invite">${CORNERS}${ic('userplus')}เชิญผู้ใช้</button></div>
         </div>
-        <div class="grid-2e">
-          <div class="card blueprint">${CORNERS}<div class="card-title">สมาชิกในร้าน (${d.members.length})</div>
-            <table class="table rtable"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>เข้าใช้ล่าสุด</th><th></th></tr></thead><tbody>
+          <div class="card blueprint">${CORNERS}<div class="card-title">ผู้ที่เข้าถึงสาขานี้ (${d.members.length})</div>
+            <table class="table rtable"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>สาขาที่เข้าถึง</th><th>เข้าใช้ล่าสุด</th><th></th></tr></thead><tbody>
             ${d.members.map((m) => `<tr>
               <td class="lead" data-label=""><div class="pn"><div class="avatar">${esc(initial(m.name))}</div><div style="min-width:0"><div>${esc(m.name)}${m.isMe ? ' <span class="tag tag-accent">คุณ</span>' : ''}</div><div class="small muted" style="overflow-wrap:anywhere">${esc(m.email)}</div></div></div></td>
               <td data-label="บทบาท"><select class="input" data-role="${m.id}" ${m.isMe ? 'disabled title="เปลี่ยนบทบาทของตัวเองไม่ได้"' : ''} style="min-width:140px">${roleOpts(m.role)}</select></td>
+              <td data-label="สาขา"><div class="branch-cell">${branchCell(m)}</div></td>
               <td data-label="เข้าใช้ล่าสุด" class="small">${m.lastLogin ? fmtDTY(m.lastLogin) : 'ยังไม่เคยเข้าใช้'}</td>
-              <td class="acts" data-label="">${m.isMe ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-reset="${m.id}" title="ตั้งรหัสผ่านใหม่">${ic('key')}</button><button type="button" class="btn btn-ghost btn-ico plain" data-remove="${m.id}" title="นำออกจากร้าน">${ic('trash')}</button>`}</td>
+              <td class="acts" data-label="">${m.isMe ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-reset="${m.id}" title="ตั้งรหัสผ่านใหม่">${ic('key')}</button><button type="button" class="btn btn-ghost btn-ico plain" data-remove="${m.id}" title="${m.allBranches ? 'นำออกจากทุกสาขา' : 'นำออกจากสาขานี้'}">${ic('trash')}</button>`}</td>
             </tr>`).join('')}</tbody></table></div>
-          <div class="card blueprint">${CORNERS}<div class="card-title">สิทธิ์ตามบทบาท</div>
-            <div class="table-wrap"><table class="table perm"><thead><tr><th>การใช้งาน</th>${Object.values(d.roles).map((r) => `<th>${r}</th>`).join('')}</tr></thead><tbody>
-            ${d.matrix.map((row) => `<tr><td>${esc(row.label)}</td>${row.cells.map((c) => `<td class="${c ? 'perm-yes' : 'perm-no'}">${ic(c ? 'check' : 'minus')}</td>`).join('')}</tr>`).join('')}
+          ${d.elsewhere?.length ? `<div class="card blueprint">${CORNERS}<div class="card-title">พนักงานสาขาอื่น (${d.elsewhere.length})</div>
+            <div class="small muted">คนที่ทำงานอยู่สาขาอื่นของร้านนี้ — กด "ดึงมาสาขานี้" หรือ "ย้ายสาขา" เพื่อกำหนดสาขาให้ใหม่</div>
+            <table class="table rtable"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>สาขาปัจจุบัน</th><th></th></tr></thead><tbody>
+            ${d.elsewhere.map((m) => `<tr>
+              <td class="lead" data-label=""><div class="pn"><div class="avatar">${esc(initial(m.name))}</div><div style="min-width:0"><div>${esc(m.name)}</div><div class="small muted" style="overflow-wrap:anywhere">${esc(m.email)}</div></div></div></td>
+              <td data-label="บทบาท">${esc(m.roleLabel)}</td>
+              <td data-label="สาขา" class="small">${m.branches.map((b) => esc(b.name)).join(', ')}</td>
+              <td class="acts" data-label=""><button type="button" class="btn btn-secondary" data-pull="${m.id}">${ic('store', 16)}${roleBy(m.role)?.scope === 'single' ? 'ย้ายมาสาขานี้' : 'เพิ่มสาขานี้'}</button><button type="button" class="btn btn-ghost plain small" data-branches="${m.id}">กำหนดสาขา</button></td>
+            </tr>`).join('')}</tbody></table></div>` : ''}
+          <div class="card blueprint">${CORNERS}
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="card-title" style="flex:1">บทบาทและสิทธิ์</div><button type="button" class="btn btn-secondary" id="add-role">${ic('plus')}เพิ่มบทบาท</button></div>
+            <div class="small muted">ติ๊กเพื่อกำหนดว่าบทบาทนั้นทำอะไรได้ เจ้าของร้านมีสิทธิ์ครบและลบไม่ได้</div>
+            <div class="table-wrap"><table class="table perm"><thead><tr><th>การใช้งาน</th>${d.roles.map((r) => `<th>${esc(r.name)}${r.key === 'owner' ? '' : `<div class="role-tools"><button type="button" class="btn btn-ghost btn-ico plain" data-rename="${esc(r.key)}" title="แก้ชื่อ">${ic('edit', 16)}</button><button type="button" class="btn btn-ghost btn-ico plain" data-delrole="${esc(r.key)}" title="ลบบทบาท">${ic('trash', 16)}</button></div>`}</th>`).join('')}</tr></thead><tbody>
+            <tr><td>ดู Dashboard / สินค้า / แจ้งเตือน</td>${d.roles.map(() => `<td class="perm-yes">${ic('check')}</td>`).join('')}</tr>
+            <tr><td>สาขาที่เข้าถึงได้</td>${d.roles.map((r) => `<td>${r.key === 'owner' ? esc(d.scopes.all) : `<select class="input" data-scope="${esc(r.key)}" style="min-width:140px"><option value="multi" ${r.scope === 'multi' ? 'selected' : ''}>${esc(d.scopes.multi)}</option><option value="single" ${r.scope === 'single' ? 'selected' : ''}>${esc(d.scopes.single)}</option></select>`}</td>`).join('')}</tr>
+            ${d.permissions.map((p) => `<tr><td>${esc(p.label)}</td>${d.roles.map((r) => `<td><input type="checkbox" data-perm="${esc(p.key)}" data-rk="${esc(r.key)}" ${r.perms.includes(p.key) ? 'checked' : ''} ${r.key === 'owner' ? 'disabled' : ''}></td>`).join('')}</tr>`).join('')}
             </tbody></table></div></div>
-        </div>
       </div>`,
       mount(root) {
-        const byId = (id) => d.members.find((m) => m.id === Number(id));
+        const byId = (id) => d.members.find((m) => m.id === Number(id)) || d.elsewhere?.find((m) => m.id === Number(id));
         $$('[data-role]', root).forEach((s) => s.addEventListener('change', async () => {
           const m = byId(s.dataset.role);
+          const warn = s.value === 'owner'
+            ? `<b>${esc(m.name)}</b> จะเป็นเจ้าของร้าน เห็นและจัดการได้<b>ทุกสาขา</b> รวมถึงผู้ใช้และการตั้งค่า`
+            : m.role === 'owner' ? `<b>${esc(m.name)}</b> จะไม่เห็นสาขาอื่นอีก เหลือเพียงสาขานี้ในบทบาท${esc(roleBy(s.value)?.name || '')}` : '';
+          if (warn && !await confirmBox('เปลี่ยนบทบาท?', warn, 'เปลี่ยนบทบาท')) { s.value = m.role; return; }
           try {
             await PUT(`/api/members/${m.id}`, { role: s.value });
-            toast(`เปลี่ยนบทบาท ${m.name} เป็น ${d.roles[s.value]} แล้ว`);
+            toast(`เปลี่ยนบทบาท ${m.name} เป็น ${roleBy(s.value)?.name || ''} แล้ว`);
             m.role = s.value;
-          } catch (e) { toast(e.message, 'err'); s.value = m.role; }
+          } catch (e) { toast(e.message, 'err'); s.value = m.role; return; }
+          render();
+        }));
+        $$('[data-branches]', root).forEach((b) => b.addEventListener('click', async () => {
+          const m = byId(b.dataset.branches);
+          const single = roleBy(m.role)?.scope === 'single';
+          const ids = await pickBranches(single ? `ย้าย ${m.name} ไปสาขา` : `สาขาที่ ${m.name} ดูแล`, m.branches.map((x) => x.id),
+            single ? `${roleBy(m.role)?.name || 'บทบาทนี้'}อยู่ได้ 1 สาขา เลือกสาขาที่ต้องการให้ทำงาน` : `${roleBy(m.role)?.name || 'บทบาทนี้'}จะเห็นและจัดการได้เฉพาะสาขาที่เลือก`, single);
+          if (!ids) return;
+          try {
+            await PUT(`/api/members/${m.id}/stores`, { storeIds: ids });
+            const here = ids.includes(S.me.store.id);
+            toast(single ? `ย้าย ${m.name} ไปสาขา ${d.stores.find((x) => x.id === ids[0])?.name || ''} แล้ว${here ? '' : ' (จะไม่แสดงในรายการของสาขานี้อีก)'}` : 'บันทึกสาขาที่ดูแลแล้ว');
+            render();
+          } catch (e) { toast(e.message, 'err'); }
+        }));
+        $$('[data-pull]', root).forEach((b) => b.addEventListener('click', async () => {
+          const m = byId(b.dataset.pull);
+          const single = roleBy(m.role)?.scope === 'single';
+          const ids = single ? [S.me.store.id] : [...new Set([...m.branches.map((x) => x.id), S.me.store.id])];
+          try {
+            await PUT(`/api/members/${m.id}/stores`, { storeIds: ids });
+            toast(single ? `ย้าย ${m.name} มาสาขา ${S.me.store.name} แล้ว` : `เพิ่ม ${m.name} ในสาขา ${S.me.store.name} แล้ว`);
+            render();
+          } catch (e) { toast(e.message, 'err'); }
         }));
         $$('[data-remove]', root).forEach((b) => b.addEventListener('click', async () => {
           const m = byId(b.dataset.remove);
-          if (!await confirmBox('นำผู้ใช้ออกจากร้าน?', `<b>${esc(m.name)}</b> จะไม่สามารถเข้าดูข้อมูลของร้านนี้ได้อีก (บัญชีและประวัติที่เคยบันทึกยังอยู่)`, 'นำออก', true)) return;
-          try { await DEL(`/api/members/${m.id}`); toast('นำออกจากร้านแล้ว'); render(); } catch (e) { toast(e.message, 'err'); }
+          const text = m.allBranches
+            ? `<b>${esc(m.name)}</b> เป็นเจ้าของร้าน จะถูกนำออกจาก<b>ทุกสาขา</b> (บัญชีและประวัติที่เคยบันทึกยังอยู่)`
+            : `<b>${esc(m.name)}</b> จะไม่สามารถเข้าดูข้อมูลของสาขานี้ได้อีก (บัญชีและประวัติที่เคยบันทึกยังอยู่)`;
+          if (!await confirmBox('นำผู้ใช้ออก?', text, 'นำออก', true)) return;
+          try { await DEL(`/api/members/${m.id}`); toast('นำผู้ใช้ออกแล้ว'); render(); } catch (e) { toast(e.message, 'err'); }
         }));
         $$('[data-reset]', root).forEach((b) => b.addEventListener('click', async () => {
           const m = byId(b.dataset.reset);
@@ -1495,15 +1792,33 @@
             wide: true,
             body: `<div class="field"><label for="iv-em">อีเมล *</label><input class="input" id="iv-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false"></div>
               <div class="field"><label for="iv-nm">ชื่อ-นามสกุล</label><input class="input" id="iv-nm" maxlength="80"></div>
-              <div class="field"><label for="iv-rl">บทบาท</label><select class="input" id="iv-rl">${roleOpts('staff')}</select></div>
+              <div class="field"><label for="iv-rl">บทบาท</label><select class="input" id="iv-rl">${roleOpts('staff')}</select>
+                <div class="hint" id="iv-hint"></div></div>
+              ${multi ? `<div class="field" id="iv-br" hidden><label>สาขาที่ให้ดูแล</label><div class="stack" style="gap:4px">${d.stores.map((s) => `<label class="check"><input type="checkbox" value="${s.id}" ${s.id === S.me.store.id ? 'checked' : ''}>${esc(s.name)}</label>`).join('')}</div></div>` : ''}
               <div class="field"><label for="iv-pw">รหัสผ่านเริ่มต้น</label><div style="display:flex;gap:8px"><input class="input" id="iv-pw" value="${genPassword()}" style="font-family:ui-monospace,monospace"><button type="button" class="btn btn-secondary" id="gen">สุ่มใหม่</button></div>
                 <div class="hint">ถ้าอีเมลนี้มีบัญชี CosmoStock อยู่แล้ว ระบบจะเพิ่มเข้าร้านโดยใช้รหัสผ่านเดิมของเขา</div></div>
               <div class="form-err" hidden></div>`,
-            onMount(dlg) { $('#gen', dlg).addEventListener('click', () => { $('#iv-pw', dlg).value = genPassword(); }); },
+            onMount(dlg) {
+              $('#gen', dlg).addEventListener('click', () => { $('#iv-pw', dlg).value = genPassword(); });
+              const sync = () => {
+                const r = roleBy($('#iv-rl', dlg).value);
+                const hint = !r ? '' : r.scope === 'all' ? 'เห็นได้ทุกสาขาของร้านนี้'
+                  : r.scope === 'multi' ? (multi ? 'เห็นและจัดการได้เฉพาะสาขาที่เลือกด้านล่าง' : 'เห็นและจัดการได้เฉพาะสาขานี้')
+                    : `เข้าถึงได้เฉพาะสาขานี้ (${S.me.store.name}) เท่านั้น`;
+                $('#iv-hint', dlg).textContent = hint;
+                if ($('#iv-br', dlg)) $('#iv-br', dlg).hidden = r?.scope !== 'multi';
+              };
+              $('#iv-rl', dlg).addEventListener('change', sync);
+              sync();
+            },
             actions: [{ label: 'ยกเลิก' }, {
               label: ic('userplus') + 'เพิ่มเข้าร้าน', cls: 'btn-primary',
               onClick: async (dlg) => {
                 const body = { email: $('#iv-em', dlg).value, name: $('#iv-nm', dlg).value, role: $('#iv-rl', dlg).value, password: $('#iv-pw', dlg).value };
+                if (roleBy(body.role)?.scope === 'multi' && $('#iv-br', dlg)) {
+                  body.storeIds = $$('#iv-br input:checked', dlg).map((c) => Number(c.value));
+                  if (!body.storeIds.length) throw new Error('กรุณาเลือกอย่างน้อย 1 สาขา');
+                }
                 const r = await POST('/api/members', body);
                 return { ...body, created: r.created };
               },
@@ -1514,6 +1829,170 @@
           if (res.created) await showCredentials('สร้างบัญชีผู้ใช้แล้ว', res.email.trim().toLowerCase(), res.password);
           render();
         });
+        const permBoxes = (dlg) => d.permissions.map((p) => `<label class="check"><input type="checkbox" value="${esc(p.key)}">${esc(p.label)}</label>`).join('');
+        $('#add-role', root).addEventListener('click', async () => {
+          const ok = await modal({
+            title: 'เพิ่มบทบาท',
+            body: `<div class="field"><label for="rl-nm">ชื่อบทบาท *</label><input class="input" id="rl-nm" maxlength="40" placeholder="เช่น แคชเชียร์"></div>
+              <div class="field"><label for="rl-sc">สาขาที่เข้าถึงได้</label><select class="input" id="rl-sc"><option value="single">${esc(d.scopes.single)}</option><option value="multi">${esc(d.scopes.multi)}</option></select></div>
+              <div class="field"><label>สิทธิ์</label><div class="stack" style="gap:4px">${permBoxes()}</div></div>
+              <div class="form-err" hidden></div>`,
+            actions: [{ label: 'ยกเลิก' }, { label: 'เพิ่มบทบาท', cls: 'btn-primary', onClick: (dlg) => POST('/api/roles', {
+              name: $('#rl-nm', dlg).value,
+              scope: $('#rl-sc', dlg).value,
+              perms: $$('input[type=checkbox]:checked', dlg).map((c) => c.value),
+            }) }],
+          });
+          if (ok) { toast('เพิ่มบทบาทแล้ว'); render(); }
+        });
+        $$('[data-rename]', root).forEach((b) => b.addEventListener('click', async () => {
+          const r = roleBy(b.dataset.rename);
+          const ok = await modal({
+            title: 'แก้ชื่อบทบาท',
+            body: `<div class="field"><label for="rn">ชื่อบทบาท</label><input class="input" id="rn" maxlength="40" value="${esc(r.name)}"></div><div class="form-err" hidden></div>`,
+            actions: [{ label: 'ยกเลิก' }, { label: 'บันทึก', cls: 'btn-primary', onClick: (dlg) => PUT(`/api/roles/${r.key}`, { name: $('#rn', dlg).value }) }],
+          });
+          if (ok) { toast('แก้ชื่อบทบาทแล้ว'); render(); }
+        }));
+        $$('[data-delrole]', root).forEach((b) => b.addEventListener('click', async () => {
+          const r = roleBy(b.dataset.delrole);
+          if (!await confirmBox('ลบบทบาท?', `ลบบทบาท <b>${esc(r.name)}</b> ออกจากร้านนี้`, 'ลบบทบาท', true)) return;
+          try { await DEL(`/api/roles/${r.key}`); toast('ลบบทบาทแล้ว'); render(); } catch (e) { toast(e.message, 'err'); }
+        }));
+        $$('[data-scope]', root).forEach((s) => s.addEventListener('change', async () => {
+          try { await PUT(`/api/roles/${s.dataset.scope}`, { scope: s.value }); toast('บันทึกการเข้าถึงสาขาแล้ว'); render(); }
+          catch (e) { toast(e.message, 'err'); render(); }
+        }));
+        $$('[data-perm]', root).forEach((c) => c.addEventListener('change', async () => {
+          const key = c.dataset.rk;
+          const perms = $$(`[data-perm][data-rk="${key}"]:checked`, root).map((x) => x.dataset.perm);
+          try { await PUT(`/api/roles/${key}`, { perms }); toast('บันทึกสิทธิ์แล้ว'); }
+          catch (e) { c.checked = !c.checked; toast(e.message, 'err'); }
+        }));
+      },
+    };
+  }
+
+  // ───────────────────────── system administration ─────────────────────────
+
+  async function viewSystem() {
+    const d = await GET('/api/sys/overview');
+    const me = S.me.user.id;
+    const pwInput = (id) => `<div style="display:flex;gap:8px"><input class="input" id="${id}" value="${genPassword()}" style="font-family:ui-monospace,monospace"><button type="button" class="btn btn-secondary" data-gen="${id}">สุ่มใหม่</button></div>`;
+    const bindGen = (dlg) => $$('[data-gen]', dlg).forEach((b) => b.addEventListener('click', () => { $('#' + b.dataset.gen, dlg).value = genPassword(); }));
+    const switchTo = async (storeId) => {
+      try { S.me = await POST('/api/me/store', { storeId }); toast('สลับไปที่ ' + S.me.store.name); go('/'); } catch (e) { toast(e.message, 'err'); }
+    };
+    const accessCell = (u) => u.superadmin ? '<span class="tag tag-accent">ทุกร้าน ทุกสาขา</span>' : u.access.length
+      ? u.access.map((a) => `<div class="small"><b>${esc(a.shop)}</b> · ${esc(a.store)} <span class="muted">(${esc(a.roleLabel)})</span></div>`).join('')
+      : '<span class="small muted">ยังไม่ได้อยู่ในร้านใด</span>';
+    return {
+      html: `<div class="page">
+        <div class="page-head">
+          <div class="ttl"><h2>ผู้ดูแลระบบ</h2><div class="sub">จัดการร้าน สาขา และผู้ใช้ทั้งหมดในระบบ — เจ้าของร้านแต่ละรายเห็นเฉพาะข้อมูลร้านของตัวเอง</div></div>
+          <div class="acts"><button type="button" class="btn btn-primary blueprint" id="new-org">${CORNERS}${ic('plus')}สร้างร้านใหม่</button></div>
+        </div>
+        <div class="kpis k4 blueprint">${CORNERS}
+          <div class="kpi"><div class="k">ร้านทั้งหมด</div><div class="v">${fmtN(d.totals.orgs)}</div></div>
+          <div class="kpi"><div class="k">สาขาทั้งหมด</div><div class="v">${fmtN(d.totals.stores)}</div></div>
+          <div class="kpi"><div class="k">ผู้ใช้ทั้งหมด</div><div class="v">${fmtN(d.totals.users)}</div></div>
+          <div class="kpi"><div class="k">สินค้าทั้งระบบ</div><div class="v">${fmtN(d.totals.products)} <small>SKU</small></div></div>
+        </div>
+        <div class="grid-2e">
+          ${d.orgs.map((o) => `<div class="card blueprint">${CORNERS}
+            <div style="display:flex;align-items:center;gap:8px"><div class="card-title" style="flex:1;min-width:0">${ic('store', 20)} ${esc(o.name)}</div>
+              <button type="button" class="btn btn-ghost btn-ico plain" data-rename="${o.id}" title="เปลี่ยนชื่อร้าน">${ic('edit')}</button>
+              <button type="button" class="btn btn-ghost btn-ico plain" data-delorg="${o.id}" title="ลบร้าน">${ic('trash')}</button></div>
+            <div class="small muted">เจ้าของร้าน: ${o.owners.length ? o.owners.map((u) => esc(`${u.name} (${u.email})`)).join(', ') : '<b>ยังไม่มีเจ้าของ</b>'}</div>
+            <div class="stack" style="gap:6px">${o.stores.map((s) => `<button type="button" class="store-opt ${s.id === S.me.store?.id ? 'on' : ''}" data-sw="${s.id}">${ic('package', 20)}<span class="nm">${esc(s.name)}<div class="small muted">${fmtN(s.products)} SKU · คงเหลือ ${fmtN(s.qty)} ชิ้น · พนักงาน ${fmtN(s.staff)} คน</div></span>${s.id === S.me.store?.id ? '<span class="tag tag-accent">กำลังดู</span>' : `<span class="small">เข้าดู</span>${ic('right')}`}</button>`).join('') || '<div class="small muted">ไม่มีสาขา</div>'}</div>
+          </div>`).join('') || `<div class="card blueprint">${CORNERS}${empty('store', 'ยังไม่มีร้านในระบบ')}</div>`}
+        </div>
+        <div class="card blueprint">${CORNERS}<div class="card-title">ผู้ใช้ทั้งหมด (${d.users.length})</div>
+          <table class="table rtable"><thead><tr><th>ผู้ใช้</th><th>ร้าน / สาขา / บทบาท</th><th>เข้าใช้ล่าสุด</th><th></th></tr></thead><tbody>
+          ${d.users.map((u) => `<tr>
+            <td class="lead" data-label=""><div class="pn"><div class="avatar">${esc(initial(u.name))}</div><div style="min-width:0"><div>${esc(u.name)}${u.id === me ? ' <span class="tag tag-accent">คุณ</span>' : ''}${u.superadmin ? ' <span class="tag tag-accent">ผู้ดูแลระบบ</span>' : ''}</div><div class="small muted" style="overflow-wrap:anywhere">${esc(u.email)}</div></div></div></td>
+            <td data-label="สิทธิ์">${accessCell(u)}</td>
+            <td data-label="เข้าใช้ล่าสุด" class="small">${u.lastLogin ? fmtDTY(u.lastLogin) : 'ยังไม่เคยเข้าใช้'}</td>
+            <td class="acts" data-label="">
+              <button type="button" class="btn btn-ghost btn-ico plain" data-pw="${u.id}" title="ตั้งรหัสผ่านใหม่">${ic('key')}</button>
+              ${u.id === me ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-sa="${u.id}" title="${u.superadmin ? 'ยกเลิกสิทธิ์ผู้ดูแลระบบ' : 'ตั้งเป็นผู้ดูแลระบบ'}">${ic(u.superadmin ? 'x' : 'settings')}</button>
+              <button type="button" class="btn btn-ghost btn-ico plain" data-deluser="${u.id}" title="ลบบัญชี">${ic('trash')}</button>`}
+            </td></tr>`).join('')}</tbody></table></div>
+      </div>`,
+      mount(root) {
+        const org = (id) => d.orgs.find((o) => o.id === Number(id));
+        const user = (id) => d.users.find((u) => u.id === Number(id));
+        $$('[data-sw]', root).forEach((b) => b.addEventListener('click', () => { const id = Number(b.dataset.sw); if (id !== S.me.store?.id) switchTo(id); }));
+        $('#new-org', root).addEventListener('click', async () => {
+          const res = await modal({
+            title: 'สร้างร้านใหม่',
+            wide: true,
+            body: `<div class="field"><label for="o-nm">ชื่อร้าน *</label><input class="input" id="o-nm" maxlength="60" placeholder="เช่น Lily Cosmetics"></div>
+              <div class="field"><label for="o-br">ชื่อสาขาแรก</label><input class="input" id="o-br" maxlength="80" placeholder="เว้นว่าง = ชื่อร้าน · สาขาหลัก"></div>
+              <div class="field"><label for="o-em">อีเมลเจ้าของร้าน *</label><input class="input" id="o-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false">
+                <div class="hint">ถ้าอีเมลนี้มีบัญชีอยู่แล้ว จะตั้งเป็นเจ้าของร้านใหม่โดยใช้รหัสผ่านเดิม</div></div>
+              <div class="field"><label for="o-on">ชื่อเจ้าของร้าน (กรณีบัญชีใหม่)</label><input class="input" id="o-on" maxlength="80"></div>
+              <div class="field"><label for="o-pw">รหัสผ่านเริ่มต้น (กรณีบัญชีใหม่)</label>${pwInput('o-pw')}</div>
+              <div class="form-err" hidden></div>`,
+            onMount: bindGen,
+            actions: [{ label: 'ยกเลิก' }, { label: ic('plus') + 'สร้างร้าน', cls: 'btn-primary', onClick: async (dlg) => {
+              const body = { shopName: $('#o-nm', dlg).value, branchName: $('#o-br', dlg).value, ownerEmail: $('#o-em', dlg).value, ownerName: $('#o-on', dlg).value, ownerPassword: $('#o-pw', dlg).value };
+              const r = await POST('/api/sys/orgs', body);
+              return { ...body, created: r.created };
+            } }],
+          });
+          if (!res) return;
+          toast(`สร้างร้าน ${res.shopName} แล้ว`);
+          if (res.created) await showCredentials('สร้างบัญชีเจ้าของร้านแล้ว', res.ownerEmail.trim().toLowerCase(), res.ownerPassword);
+          await refreshMe();
+          render();
+        });
+        $$('[data-rename]', root).forEach((b) => b.addEventListener('click', async () => {
+          const o = org(b.dataset.rename);
+          const ok = await modal({
+            title: 'เปลี่ยนชื่อร้าน',
+            body: `<div class="field"><label for="rn">ชื่อร้าน</label><input class="input" id="rn" maxlength="60" value="${esc(o.name)}"></div><div class="form-err" hidden></div>`,
+            actions: [{ label: 'ยกเลิก' }, { label: 'บันทึก', cls: 'btn-primary', onClick: (dlg) => PUT(`/api/sys/orgs/${o.id}`, { name: $('#rn', dlg).value }) }],
+          });
+          if (ok) { toast('เปลี่ยนชื่อร้านแล้ว'); await refreshMe(); render(); }
+        }));
+        $$('[data-delorg]', root).forEach((b) => b.addEventListener('click', async () => {
+          const o = org(b.dataset.delorg);
+          const ok = await modal({
+            title: `ลบร้าน ${o.name}?`,
+            body: `<div class="dialog-body">สาขาทั้งหมด ${o.stores.length} สาขา พร้อมสินค้า ล็อต และประวัติการเคลื่อนไหวจะถูก<b>ลบถาวร</b> กู้คืนไม่ได้ (บัญชีผู้ใช้ยังอยู่)</div>
+              <div class="field"><label for="cf">พิมพ์ชื่อร้าน <b>${esc(o.name)}</b> เพื่อยืนยัน</label><input class="input" id="cf" autocomplete="off"></div><div class="form-err" hidden></div>`,
+            actions: [{ label: 'ยกเลิก' }, { label: ic('trash') + 'ลบร้านถาวร', cls: 'btn-danger', onClick: (dlg) => DEL(`/api/sys/orgs/${o.id}`, { confirmName: $('#cf', dlg).value }) }],
+          });
+          if (!ok) return;
+          toast(`ลบร้าน ${o.name} แล้ว`);
+          await refreshMe();
+          render();
+        }));
+        $$('[data-pw]', root).forEach((b) => b.addEventListener('click', async () => {
+          const u = user(b.dataset.pw);
+          const pw = await modal({
+            title: `ตั้งรหัสผ่านใหม่ให้ ${u.name}`,
+            body: `<div class="field"><label for="sp">รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)</label>${pwInput('sp')}</div>
+              <div class="small muted">${u.id === me ? 'อุปกรณ์อื่นของคุณจะถูกออกจากระบบ' : 'ผู้ใช้จะถูกออกจากระบบทุกอุปกรณ์'}</div><div class="form-err" hidden></div>`,
+            onMount: bindGen,
+            actions: [{ label: 'ยกเลิก' }, { label: 'บันทึกรหัสผ่าน', cls: 'btn-primary', onClick: async (dlg) => { const v = $('#sp', dlg).value; await POST(`/api/sys/users/${u.id}/password`, { password: v }); return v; } }],
+          });
+          if (pw) showCredentials('ตั้งรหัสผ่านใหม่แล้ว', u.email, pw);
+        }));
+        $$('[data-sa]', root).forEach((b) => b.addEventListener('click', async () => {
+          const u = user(b.dataset.sa);
+          const text = u.superadmin
+            ? `<b>${esc(u.name)}</b> จะไม่ใช่ผู้ดูแลระบบอีกต่อไป และเห็นเฉพาะร้านที่ตัวเองเป็นสมาชิก`
+            : `<b>${esc(u.name)}</b> จะเห็นและจัดการได้<b>ทุกร้าน ทุกสาขา และผู้ใช้ทั้งหมด</b>ในระบบ`;
+          if (!await confirmBox(u.superadmin ? 'ยกเลิกสิทธิ์ผู้ดูแลระบบ?' : 'ตั้งเป็นผู้ดูแลระบบ?', text, 'ยืนยัน', !u.superadmin)) return;
+          try { await PUT(`/api/sys/users/${u.id}`, { superadmin: !u.superadmin }); toast('บันทึกสิทธิ์แล้ว'); render(); } catch (e) { toast(e.message, 'err'); }
+        }));
+        $$('[data-deluser]', root).forEach((b) => b.addEventListener('click', async () => {
+          const u = user(b.dataset.deluser);
+          if (!await confirmBox('ลบบัญชีผู้ใช้?', `บัญชี <b>${esc(u.name)}</b> (${esc(u.email)}) จะถูกลบถาวรและออกจากทุกร้าน — ประวัติการเคลื่อนไหวที่เคยบันทึกยังอยู่`, 'ลบบัญชี', true)) return;
+          try { await DEL(`/api/sys/users/${u.id}`); toast('ลบบัญชีแล้ว'); render(); } catch (e) { toast(e.message, 'err'); }
+        }));
       },
     };
   }
@@ -1522,6 +2001,13 @@
 
   async function viewSettings() {
     const { user, store, stores } = S.me;
+    const canNewShop = !user.superadmin && stores.some((s) => s.role === 'owner');
+    const shops = [];
+    for (const s of stores) {
+      if (!user.superadmin && s.role !== 'owner') continue;
+      if (shops.some((o) => o.id === s.orgId)) continue;
+      shops.push({ id: s.orgId, name: s.orgName || 'ร้าน' });
+    }
     return {
       html: `<div class="page narrow">
         <div class="page-head"><div class="ttl"><h2>ตั้งค่า</h2><div class="sub">${esc(user.email)}</div></div></div>
@@ -1548,10 +2034,19 @@
           <div class="form-foot"><button type="submit" class="btn btn-primary">${ic('key')}เปลี่ยนรหัสผ่าน</button></div>
         </form>
         <div class="card blueprint form-card">${CORNERS}
-          <div class="card-title">ร้านของฉัน (${stores.length})</div>
-          <div class="stack" style="gap:8px">${stores.map((s) => `<button type="button" class="store-opt ${s.id === store.id ? 'on' : ''}" data-sw="${s.id}">${ic('store', 20)}<span class="nm">${esc(s.name)}<div class="small muted">${esc(s.roleLabel)}</div></span>${s.id === store.id ? '<span class="tag tag-accent">กำลังใช้งาน</span>' : `<span class="small">สลับ</span>${ic('right')}`}</button>`).join('')}</div>
-          <form id="nf" class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px" novalidate>
-            <div class="field"><label for="n-nm">เพิ่มร้าน / สาขาใหม่ (คุณจะเป็นเจ้าของร้าน)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" id="n-nm" name="name" maxlength="80" placeholder="เช่น Rose Beauty · สาขาอารีย์" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('plus')}สร้างร้าน</button></div></div>
+          <div class="card-title">ร้านและสาขาของฉัน (${stores.length})</div>
+          <div class="stack" style="gap:8px">${storeOptions(stores, store.id, 'data-sw', (s) => (s.id === store.id ? '<span class="tag tag-accent">กำลังใช้งาน</span>' : `<span class="small">สลับ</span>${ic('right')}`))}</div>
+          ${can('settings') ? '' : '<div class="small muted">สาขาที่คุณเข้าถึงได้กำหนดโดยเจ้าของร้าน</div>'}
+          <form id="nf" class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px" novalidate ${shops.length ? '' : 'hidden'}>
+            <div class="field"><label for="n-org">เพิ่มสาขาในร้าน</label><select class="input" id="n-org" name="orgId">${shops.map((o) => `<option value="${o.id}" ${o.id === store.orgId ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>
+              <div class="hint">เจ้าของร้านทุกคนของร้านที่เลือกจะเห็นสาขานี้อัตโนมัติ</div></div>
+            <div class="field"><label for="n-nm">ชื่อสาขา</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" id="n-nm" name="name" maxlength="80" required placeholder="เช่น สาขาอารีย์" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('plus')}สร้างสาขา</button></div></div>
+            <div class="form-err" hidden></div>
+          </form>
+          <form id="of" class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px" novalidate ${canNewShop ? '' : 'hidden'}>
+            <div class="field"><label for="o-nm">สร้างร้านใหม่ (แยกข้อมูลจากร้านเดิมทั้งหมด คุณจะเป็นเจ้าของร้าน)</label>
+              <input class="input" id="o-nm" name="shopName" maxlength="60" placeholder="ชื่อร้าน เช่น Lily Cosmetics"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" name="name" maxlength="80" placeholder="ชื่อสาขาแรก (เว้นว่างได้)" aria-label="ชื่อสาขาแรก" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('store')}สร้างร้าน</button></div>
             <div class="form-err" hidden></div>
           </form>
         </div>
@@ -1569,8 +2064,13 @@
           toast('เปลี่ยนรหัสผ่านแล้ว อุปกรณ์อื่นจะถูกออกจากระบบ');
         });
         onSubmit($('#nf', root), async (d) => {
-          S.me = await POST('/api/stores', { name: d.name });
-          toast(`สร้างร้าน ${S.me.store.name} แล้ว`);
+          S.me = await POST('/api/stores', { kind: 'branch', name: d.name, orgId: Number(d.orgId) });
+          toast(`สร้างสาขา ${S.me.store.name} แล้ว`);
+          go('/');
+        });
+        onSubmit($('#of', root), async (d) => {
+          S.me = await POST('/api/stores', { kind: 'shop', shopName: d.shopName, name: d.name });
+          toast(`สร้างร้าน ${S.me.store.orgName} แล้ว`);
           go('/');
         });
         $$('[data-sw]', root).forEach((b) => b.addEventListener('click', async () => {
@@ -1590,7 +2090,7 @@
         <div class="card blueprint" style="flex-direction:row;align-items:center;gap:12px;padding:14px">${CORNERS}
           <div class="avatar lg">${esc(initial(user.name))}</div>
           <div style="flex:1;min-width:0"><div class="card-title">${esc(user.name)}</div><div class="card-meta" style="overflow-wrap:anywhere">${esc(user.email)}</div></div>
-          <span class="tag tag-accent">${esc(store.roleLabel)}</span></div>
+          <span class="tag tag-accent">${esc(user.superadmin ? 'ผู้ดูแลระบบ' : store.roleLabel)}</span></div>
         <div class="field"><label>ร้านที่กำลังจัดการ</label>
           <button type="button" class="btn btn-secondary store-btn" data-act="store" style="width:100%;min-height:52px">${ic('store', 20)}<span class="nm">${esc(store.name)}</span>${stores.length > 1 ? '<span class="small muted">สลับร้าน</span>' : ''}${ic('right')}</button></div>
         <div class="menu-sec"><div class="h">คลังสินค้า</div>
@@ -1601,6 +2101,7 @@
           <button type="button" class="mi" data-act="scan">${ic('scan', 20)}<span class="lbl">สแกน Barcode / QR</span>${ic('right')}</button>
         </div>
         <div class="menu-sec"><div class="h">บัญชีและร้าน</div>
+          ${user.superadmin ? link('#/system', 'key', 'ผู้ดูแลระบบ · ทุกร้าน ทุกสาขา') : ''}
           ${can('users') ? link('#/users', 'users', 'ผู้ใช้และสิทธิ์') : ''}
           ${link('#/settings', 'settings', can('settings') ? 'ตั้งค่าร้าน · แจ้งเตือนหมดอายุ · รหัสผ่าน' : 'ตั้งค่าบัญชี · รหัสผ่าน')}
         </div>
