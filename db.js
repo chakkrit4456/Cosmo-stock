@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS org_roles (
   org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
   key TEXT NOT NULL,
   name TEXT NOT NULL,
-  scope TEXT NOT NULL CHECK (scope IN ('all', 'multi', 'single')),
+  scope TEXT NOT NULL CHECK (scope IN ('all', 'multi', 'single', 'stores')),
   builtin INTEGER NOT NULL DEFAULT 0,
   sort INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (org_id, key)
@@ -175,6 +175,20 @@ CREATE TABLE IF NOT EXISTS org_role_perms (
   PRIMARY KEY (org_id, role_key, perm),
   FOREIGN KEY (org_id, role_key) REFERENCES org_roles(org_id, key) ON DELETE CASCADE
 );
+-- บทบาทแบบ "เฉพาะสาขาที่กำหนด" (scope = 'stores'): สาขาที่ทุกคนในบทบาทนี้เข้าถึงได้
+CREATE TABLE IF NOT EXISTS org_role_stores (
+  org_id INTEGER NOT NULL,
+  role_key TEXT NOT NULL,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  PRIMARY KEY (org_id, role_key, store_id),
+  FOREIGN KEY (org_id, role_key) REFERENCES org_roles(org_id, key) ON DELETE CASCADE
+);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'org_roles_scope_check' AND pg_get_constraintdef(oid) LIKE '%stores%') THEN
+    ALTER TABLE org_roles DROP CONSTRAINT IF EXISTS org_roles_scope_check;
+    ALTER TABLE org_roles ADD CONSTRAINT org_roles_scope_check CHECK (scope IN ('all', 'multi', 'single', 'stores'));
+  END IF;
+END $$;
 `;
 
 // สร้างตาราง (ถ้ายังไม่มี) — ล็อกด้วย advisory lock กันหลายโปรเซสสร้างพร้อมกัน

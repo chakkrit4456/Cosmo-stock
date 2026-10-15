@@ -36,7 +36,14 @@ const DEFAULT_ROLES = [
   { key: 'viewer', name: 'ดูอย่างเดียว', scope: 'single', sort: 3, perms: ['report'] },
 ];
 const ROLES = Object.fromEntries(DEFAULT_ROLES.map((r) => [r.key, r.name]));
-const SCOPE_LABEL = { all: 'ทุกสาขา', multi: 'สาขาที่ได้รับมอบหมาย', single: '1 สาขา' };
+// การเข้าถึงสาขาของบทบาท — all/stores: บทบาทกำหนดสาขาเอง (ทุกคนในบทบาทเหมือนกัน), multi/single: เลือกสาขาให้เป็นรายคน
+const SCOPE_LABEL = {
+  all: 'ทุกสาขาของร้าน',
+  stores: 'เฉพาะสาขาที่เลือก',
+  multi: 'เลือกให้แต่ละคน (ได้หลายสาขา)',
+  single: 'เลือกให้แต่ละคน (คนละ 1 สาขา)',
+};
+const FIXED_SCOPES = ['all', 'stores'];
 const DEFAULT_CATEGORIES = ['สกินแคร์', 'เมคอัพ', 'บำรุงผิว', 'กันแดด', 'คลีนซิ่ง'];
 
 // ───────────────────────── database (PostgreSQL — ดู db.js) ─────────────────────────
@@ -335,7 +342,14 @@ async function assertBranchFree(orgId, name, exceptId = 0) {
 async function createStore(orgId, name, at = nowIso()) {
   if (!orgId) throw new HttpError(400, 'ต้องระบุร้านของสาขา');
   await assertBranchFree(orgId, name);
-  return await insert('INSERT INTO stores(name, org_id, created_at) VALUES (?, ?, ?)', name, orgId, at);
+  const id = await insert('INSERT INTO stores(name, org_id, created_at) VALUES (?, ?, ?)', name, orgId, at);
+  // บทบาทแบบ "ทุกสาขาของร้าน" ได้สาขาใหม่ไปด้วยทันที
+  for (const m of await all(`SELECT DISTINCT m.user_id, m.role FROM members m JOIN stores s ON s.id = m.store_id
+                             JOIN org_roles r ON r.org_id = s.org_id AND r.key = m.role
+                             WHERE s.org_id = ? AND r.scope = 'all' AND m.role <> 'owner'`, orgId)) {
+    await run('INSERT INTO members(store_id, user_id, role, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', id, m.user_id, m.role, at);
+  }
+  return id;
 }
 
 // ลบสาขาพร้อมข้อมูลทั้งหมดของสาขา (movements อ้าง products โดยไม่ cascade จึงต้องลบก่อน)
@@ -367,13 +381,36 @@ async function createOrg(name, at = nowIso()) {
 
 async function orgRoles(orgId) {
   return pall(await all('SELECT key, name, scope, builtin, sort FROM org_roles WHERE org_id = ? ORDER BY sort, lower(name)', orgId), async (r) => ({
-    key: r.key, name: r.name, scope: r.scope, builtin: !!r.builtin,
+    key: r.key, name: r.name, scope: r.scope, builtin: !!r.builtin, storeIds: r.scope === 'stores' ? await roleStoreIds(orgId, r.key) : [],
     perms: r.key === 'owner' ? PERM_KEYS : (await all('SELECT perm FROM org_role_perms WHERE org_id = ? AND role_key = ?', orgId, r.key)).map((p) => p.perm),
   }));
 }
 
 async function roleName(orgId, key) {
   return (await get('SELECT name FROM org_roles WHERE org_id = ? AND key = ?', orgId, key))?.name || ROLES[key] || key;
+}
+
+const roleStoreIds = async (orgId, key) => (await all('SELECT store_id FROM org_role_stores WHERE org_id = ? AND role_key = ? ORDER BY store_id', orgId, key)).map((r) => r.store_id);
+
+// สาขาที่บทบาทกำหนดไว้ตายตัว (all/stores) — null = เลือกสาขาให้เป็นรายคน
+async function fixedStoreIds(orgId, key) {
+  const scope = await roleScope(orgId, key);
+  if (scope === 'all') return (await all('SELECT id FROM stores WHERE org_id = ? ORDER BY id', orgId)).map((s) => s.id);
+  if (scope === 'stores') return await roleStoreIds(orgId, key);
+  return null;
+}
+
+// ให้ผู้ใช้อยู่ครบทุกสาขาที่บทบาทกำหนด และออกจากสาขาอื่นของร้าน
+async function syncFixedMember(userId, orgId, role, ids) {
+  for (const r of await orgMemberRows(userId, orgId)) if (!ids.includes(r.store_id)) await leaveStore(userId, r.store_id);
+  for (const id of ids) await upsertMember(id, userId, role);
+}
+
+async function syncFixedRole(orgId, role) {
+  const ids = await fixedStoreIds(orgId, role);
+  if (!ids?.length) return;
+  const users = await all('SELECT DISTINCT m.user_id FROM members m JOIN stores s ON s.id = m.store_id WHERE s.org_id = ? AND m.role = ?', orgId, role);
+  for (const u of users) await syncFixedMember(u.user_id, orgId, role, ids);
 }
 
 async function roleScope(orgId, key) {
@@ -897,6 +934,7 @@ async function assertBranchRule(userId, orgId, role, storeId) {
   const others = (await orgMemberRows(userId, orgId)).filter((r) => r.store_id !== storeId);
   if (!others.length) return;
   const scope = await roleScope(orgId, role);
+  if (FIXED_SCOPES.includes(scope)) return; // สาขามาจากบทบาท — syncFixedMember จัดให้เอง
   if (scope === 'single') {
     throw new HttpError(400, `${await roleName(orgId, role)}เข้าถึงได้เพียง 1 สาขา — ผู้ใช้นี้อยู่ที่ "${others[0].name}" แล้ว (นำออกจากสาขานั้นก่อน หรือเปลี่ยนเป็นบทบาทที่ดูแลได้หลายสาขา)`);
   }
@@ -975,7 +1013,7 @@ api('GET', '/api/invite-targets', { store: false }, async (ctx) => {
     if (!await can(s.role, 'users', s.orgId)) continue;
     if (!shops.has(s.orgId)) {
       const org = await get('SELECT name FROM orgs WHERE id = ?', s.orgId);
-      shops.set(s.orgId, { orgId: s.orgId, orgName: org?.name || '', stores: [], roles: (await orgRoles(s.orgId)).map((r) => ({ key: r.key, name: r.name, scope: r.scope })) });
+      shops.set(s.orgId, { orgId: s.orgId, orgName: org?.name || '', stores: [], roles: (await orgRoles(s.orgId)).map((r) => ({ key: r.key, name: r.name, scope: r.scope, storeIds: r.storeIds })) });
     }
     shops.get(s.orgId).stores.push({ id: s.id, name: s.name });
   }
@@ -1011,6 +1049,12 @@ api('POST', '/api/members', { perm: 'users' }, async (ctx) => {
       return { ok: true, created };
     }
     await assertBranchRule(u.id, t.orgId, role, t.storeId);
+    const fixed = await fixedStoreIds(t.orgId, role);
+    if (fixed) {
+      if (!fixed.length) throw new HttpError(400, 'บทบาทนี้ยังไม่ได้เลือกสาขา — ไปเลือกสาขาที่ "บทบาทและสิทธิ์" ก่อน');
+      await syncFixedMember(u.id, t.orgId, role, fixed);
+      return { ok: true, created };
+    }
     const ids = await roleScope(t.orgId, role) === 'multi' ? await branchIds(t, ctx.body.storeIds) : [t.storeId];
     if (!ids.includes(t.storeId)) ids.push(t.storeId);
     for (const id of ids) {
@@ -1042,8 +1086,17 @@ api('PUT', '/api/members/:userId', { perm: 'users' }, async (ctx) => {
         await assertNotLastOwner(ctx);
         await leaveOrg(m.userId, ctx.orgId);
         await upsertMember(ctx.storeId, m.userId, role);
+        const ids = await fixedStoreIds(ctx.orgId, role);
+        if (ids?.length) await syncFixedMember(m.userId, ctx.orgId, role, ids);
         return;
       }
+      const fixed = await fixedStoreIds(ctx.orgId, role);
+      if (fixed) {
+        if (!fixed.length) throw new HttpError(400, 'บทบาทนี้ยังไม่ได้เลือกสาขา — ไปเลือกสาขาที่ "บทบาทและสิทธิ์" ก่อน');
+        return await syncFixedMember(m.userId, ctx.orgId, role, fixed);
+      }
+      // ย้ายออกจากบทบาทที่สาขาตายตัว → เริ่มจากสาขานี้สาขาเดียว แล้วค่อยกำหนดสาขาเป็นรายคน
+      if (FIXED_SCOPES.includes(await roleScope(ctx.orgId, m.role))) await syncFixedMember(m.userId, ctx.orgId, m.role, [ctx.storeId]);
       await assertBranchRule(m.userId, ctx.orgId, role, ctx.storeId);
       if (await roleScope(ctx.orgId, role) === 'multi') {
         for (const r of await orgMemberRows(m.userId, ctx.orgId)) await upsertMember(r.store_id, m.userId, role);
@@ -1073,6 +1126,8 @@ api('DELETE', '/api/members/:userId', { perm: 'users' }, async (ctx) => {
     if (m.role === 'owner') {
       await assertNotLastOwner(ctx);
       await leaveOrg(m.userId, ctx.orgId);
+    } else if (FIXED_SCOPES.includes(await roleScope(ctx.orgId, m.role))) {
+      await leaveOrg(m.userId, ctx.orgId); // สาขามาจากบทบาท ออกทีละสาขาไม่ได้
     } else await leaveStore(m.userId, ctx.storeId);
   });
   return { ok: true };
@@ -1085,7 +1140,8 @@ api('PUT', '/api/members/:userId/stores', { perm: 'users' }, async (ctx) => {
   if (!rows.length) throw new HttpError(404, 'ไม่พบสมาชิก');
   const m = { userId, role: rows[0].role };
   const scope = await roleScope(ctx.orgId, m.role);
-  if (m.role === 'owner' || scope === 'all') throw new HttpError(400, 'เจ้าของร้านเห็นทุกสาขาอยู่แล้ว ไม่ต้องกำหนดสาขา');
+  if (m.role === 'owner') throw new HttpError(400, 'เจ้าของร้านเห็นทุกสาขาอยู่แล้ว ไม่ต้องกำหนดสาขา');
+  if (FIXED_SCOPES.includes(scope)) throw new HttpError(400, `สาขาของ${await roleName(ctx.orgId, m.role)}กำหนดไว้ที่บทบาท — แก้ได้ที่ "บทบาทและสิทธิ์"`);
   const ids = await branchIds(ctx, ctx.body.storeIds);
   if (scope === 'single' && ids.length !== 1) {
     throw new HttpError(400, `${await roleName(ctx.orgId, m.role)}อยู่ได้เพียง 1 สาขา — เลือกสาขาเดียว (หรือเปลี่ยนเป็นบทบาทที่ดูแลได้หลายสาขา)`);
@@ -1106,9 +1162,14 @@ function permList(list) {
 }
 
 const scopeVal = (s) => {
-  if (s === 'multi' || s === 'single') return s;
+  if (Object.hasOwn(SCOPE_LABEL, s)) return s;
   throw new HttpError(400, 'รูปแบบการเข้าถึงสาขาไม่ถูกต้อง');
 };
+
+async function setRoleStores(orgId, key, ids) {
+  await run('DELETE FROM org_role_stores WHERE org_id = ? AND role_key = ?', orgId, key);
+  for (const id of ids || []) await run('INSERT INTO org_role_stores(org_id, role_key, store_id) VALUES (?, ?, ?)', orgId, key, id);
+}
 
 async function roleOf(ctx) {
   const key = String(ctx.params.key || '');
@@ -1120,6 +1181,7 @@ async function roleOf(ctx) {
 api('POST', '/api/roles', { perm: 'users' }, async (ctx) => {
   const name = text(ctx.body.name, { label: 'ชื่อบทบาท', max: 40, required: true });
   const scope = scopeVal(ctx.body.scope || 'single');
+  const storeIds = scope === 'stores' ? await branchIds(ctx, ctx.body.storeIds || []) : null;
   const perms = permList(ctx.body.perms || []);
   if (await get('SELECT 1 FROM org_roles WHERE org_id = ? AND lower(name) = lower(?)', ctx.orgId, name)) throw new HttpError(409, 'มีบทบาทชื่อนี้อยู่แล้ว');
   const key = `c${crypto.randomBytes(4).toString('hex')}`;
@@ -1127,6 +1189,7 @@ api('POST', '/api/roles', { perm: 'users' }, async (ctx) => {
   await tx(async () => {
     await run('INSERT INTO org_roles(org_id, key, name, scope, builtin, sort) VALUES (?, ?, ?, ?, 0, ?)', ctx.orgId, key, name, scope, sort);
     for (const p of perms) await run('INSERT INTO org_role_perms(org_id, role_key, perm) VALUES (?, ?, ?)', ctx.orgId, key, p);
+    await setRoleStores(ctx.orgId, key, storeIds);
   });
   return { ok: true, key };
 });
@@ -1136,6 +1199,7 @@ api('PUT', '/api/roles/:key', { perm: 'users' }, async (ctx) => {
   if (role.key === 'owner') throw new HttpError(400, 'แก้สิทธิ์ของเจ้าของร้านไม่ได้ เจ้าของร้านมีสิทธิ์ครบเสมอ');
   const name = ctx.body.name !== undefined ? text(ctx.body.name, { label: 'ชื่อบทบาท', max: 40, required: true }) : null;
   const scope = ctx.body.scope !== undefined ? scopeVal(ctx.body.scope) : null;
+  const storeIds = scope === 'stores' ? await branchIds(ctx, ctx.body.storeIds || []) : null;
   const perms = ctx.body.perms !== undefined ? permList(ctx.body.perms) : null;
   if (name && await get('SELECT 1 FROM org_roles WHERE org_id = ? AND key <> ? AND lower(name) = lower(?)', ctx.orgId, role.key, name)) {
     throw new HttpError(409, 'มีบทบาทชื่อนี้อยู่แล้ว');
@@ -1143,11 +1207,19 @@ api('PUT', '/api/roles/:key', { perm: 'users' }, async (ctx) => {
   if (scope === 'single' && role.scope !== 'single') {
     const busy = await get(`SELECT 1 FROM members m JOIN stores s ON s.id = m.store_id
                       WHERE s.org_id = ? AND m.role = ? GROUP BY m.user_id HAVING COUNT(*) > 1 LIMIT 1`, ctx.orgId, role.key);
-    if (busy) throw new HttpError(400, 'มีผู้ใช้บทบาทนี้ในหลายสาขา ย้ายให้เหลือสาขาเดียวก่อน');
+    if (busy) {
+      throw new HttpError(400, FIXED_SCOPES.includes(role.scope)
+        ? 'มีผู้ใช้บทบาทนี้ในหลายสาขา — เลือก "เลือกให้แต่ละคน (ได้หลายสาขา)" ก่อน แล้วย้ายแต่ละคนให้เหลือสาขาเดียว'
+        : 'มีผู้ใช้บทบาทนี้ในหลายสาขา ย้ายให้เหลือสาขาเดียวก่อน');
+    }
   }
   await tx(async () => {
     if (name) await run('UPDATE org_roles SET name = ? WHERE org_id = ? AND key = ?', name, ctx.orgId, role.key);
-    if (scope) await run('UPDATE org_roles SET scope = ? WHERE org_id = ? AND key = ?', scope, ctx.orgId, role.key);
+    if (scope) {
+      await run('UPDATE org_roles SET scope = ? WHERE org_id = ? AND key = ?', scope, ctx.orgId, role.key);
+      await setRoleStores(ctx.orgId, role.key, storeIds);
+      await syncFixedRole(ctx.orgId, role.key);
+    }
     if (perms) {
       await run('DELETE FROM org_role_perms WHERE org_id = ? AND role_key = ?', ctx.orgId, role.key);
       for (const p of perms) await run('INSERT INTO org_role_perms(org_id, role_key, perm) VALUES (?, ?, ?)', ctx.orgId, role.key, p);

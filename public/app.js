@@ -1715,9 +1715,30 @@
     const roleBy = (k) => d.roles.find((r) => r.key === k);
     const roleOpts = (sel) => d.roles.map((r) => `<option value="${esc(r.key)}" ${r.key === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
     const multi = d.stores.length > 1;
+    const shopName = S.me.store.orgName || S.me.store.name;
+    const storeName = (id) => d.stores.find((s) => s.id === id)?.name || '';
+    const fixedScope = (k) => ['all', 'stores'].includes(roleBy(k)?.scope);
+    const roleCount = (k) => [...d.members, ...(d.elsewhere || [])].filter((m) => m.role === k).length;
+    // dropdown "สาขาที่เข้าถึงได้" — เลือกทั้งร้าน / สาขาที่ระบุ / หรือให้เลือกเป็นรายคน
+    const scopeSelect = (r) => {
+      const ids = r.scope === 'stores' ? r.storeIds : [];
+      const opt = (v, label, sel) => `<option value="${v}" ${sel ? 'selected' : ''}>${esc(label)}</option>`;
+      return `<select class="input" data-scope="${esc(r.key)}" style="min-width:190px">
+        <optgroup label="ทั้งร้าน">${opt('all', `ทุกสาขาของร้าน ${shopName} (${d.stores.length} สาขา)`, r.scope === 'all')}</optgroup>
+        <optgroup label="เฉพาะสาขา (ทุกคนในบทบาทนี้)">
+          ${d.stores.map((s) => opt(`store:${s.id}`, `สาขา ${s.name}`, ids.length === 1 && ids[0] === s.id)).join('')}
+          ${ids.length > 1 ? opt('stores', `สาขา ${ids.map(storeName).join(', ')}`, true) : ''}
+          ${multi ? opt('pick', 'เลือกหลายสาขา…', false) : ''}
+        </optgroup>
+        <optgroup label="เลือกสาขาให้แต่ละคน (ที่รายชื่อผู้ใช้ด้านบน)">
+          ${opt('multi', 'รายคน — ได้หลายสาขา', r.scope === 'multi')}
+          ${opt('single', 'รายคน — คนละ 1 สาขา', r.scope === 'single')}
+        </optgroup></select>`;
+    };
     const branchCell = (m) => {
       if (m.allBranches) return `<span class="tag tag-accent">ทุกสาขา (${d.stores.length})</span>`;
       const names = m.branches.map((b) => esc(b.name)).join(', ');
+      if (fixedScope(m.role)) return `<span class="small">${names}</span><span class="small muted">(ตามบทบาท)</span>`;
       const single = roleBy(m.role)?.scope === 'single';
       return `<span class="small">${names}</span>${multi ? `<button type="button" class="btn btn-ghost plain small" data-branches="${m.id}" style="min-height:32px;padding:0 6px">${ic('store', 16)}${single ? 'ย้ายสาขา' : 'กำหนดสาขา'}</button>` : ''}`;
     };
@@ -1745,7 +1766,7 @@
               <td data-label="บทบาท"><select class="input" data-role="${m.id}" ${m.isMe ? 'disabled title="เปลี่ยนบทบาทของตัวเองไม่ได้"' : ''} style="min-width:140px">${roleOpts(m.role)}</select></td>
               <td data-label="สาขา"><div class="branch-cell">${branchCell(m)}</div></td>
               <td data-label="เข้าใช้ล่าสุด" class="small">${m.lastLogin ? fmtDTY(m.lastLogin) : 'ยังไม่เคยเข้าใช้'}</td>
-              <td class="acts" data-label="">${m.isMe ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-reset="${m.id}" title="ตั้งรหัสผ่านใหม่">${ic('key')}</button><button type="button" class="btn btn-ghost btn-ico plain" data-remove="${m.id}" title="${m.allBranches ? 'นำออกจากทุกสาขา' : 'นำออกจากสาขานี้'}">${ic('trash')}</button>`}</td>
+              <td class="acts" data-label="">${m.isMe ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-reset="${m.id}" title="ตั้งรหัสผ่านใหม่">${ic('key')}</button><button type="button" class="btn btn-ghost btn-ico plain" data-remove="${m.id}" title="${m.allBranches || fixedScope(m.role) ? 'นำออกจากทุกสาขา' : 'นำออกจากสาขานี้'}">${ic('trash')}</button>`}</td>
             </tr>`).join('')}</tbody></table></div>
           ${d.elsewhere?.length ? `<div class="card blueprint">${CORNERS}<div class="card-title">พนักงานสาขาอื่น (${d.elsewhere.length})</div>
             <div class="small muted">คนที่ทำงานอยู่สาขาอื่นของร้านนี้ — กด "ดึงมาสาขานี้" หรือ "ย้ายสาขา" เพื่อกำหนดสาขาให้ใหม่</div>
@@ -1754,14 +1775,14 @@
               <td class="lead" data-label=""><div class="pn"><div class="avatar">${esc(initial(m.name))}</div><div style="min-width:0"><div>${esc(m.name)}</div><div class="small muted" style="overflow-wrap:anywhere">${esc(m.email)}</div></div></div></td>
               <td data-label="บทบาท">${esc(m.roleLabel)}</td>
               <td data-label="สาขา" class="small">${m.branches.map((b) => esc(b.name)).join(', ')}</td>
-              <td class="acts" data-label=""><button type="button" class="btn btn-secondary" data-pull="${m.id}">${ic('store', 16)}${roleBy(m.role)?.scope === 'single' ? 'ย้ายมาสาขานี้' : 'เพิ่มสาขานี้'}</button><button type="button" class="btn btn-ghost plain small" data-branches="${m.id}">กำหนดสาขา</button></td>
+              <td class="acts" data-label="">${fixedScope(m.role) ? '<span class="small muted">สาขากำหนดที่บทบาท</span>' : `<button type="button" class="btn btn-secondary" data-pull="${m.id}">${ic('store', 16)}${roleBy(m.role)?.scope === 'single' ? 'ย้ายมาสาขานี้' : 'เพิ่มสาขานี้'}</button><button type="button" class="btn btn-ghost plain small" data-branches="${m.id}">กำหนดสาขา</button>`}</td>
             </tr>`).join('')}</tbody></table></div>` : ''}
           <div class="card blueprint">${CORNERS}
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="card-title" style="flex:1">บทบาทและสิทธิ์</div><button type="button" class="btn btn-secondary" id="add-role">${ic('plus')}เพิ่มบทบาท</button></div>
-            <div class="small muted">ติ๊กเพื่อกำหนดว่าบทบาทนั้นทำอะไรได้ เจ้าของร้านมีสิทธิ์ครบและลบไม่ได้</div>
+            <div class="small muted">ติ๊กเพื่อกำหนดว่าบทบาทนั้นทำอะไรได้ เจ้าของร้านมีสิทธิ์ครบและลบไม่ได้ — "สาขาที่เข้าถึงได้" เลือกได้ทั้งร้าน, ระบุสาขา (ทุกคนในบทบาทได้สาขาเดียวกัน) หรือเลือกสาขาให้แต่ละคนที่รายชื่อผู้ใช้</div>
             <div class="table-wrap"><table class="table perm"><thead><tr><th>การใช้งาน</th>${d.roles.map((r) => `<th>${esc(r.name)}${r.key === 'owner' ? '' : `<div class="role-tools"><button type="button" class="btn btn-ghost btn-ico plain" data-rename="${esc(r.key)}" title="แก้ชื่อ">${ic('edit', 16)}</button><button type="button" class="btn btn-ghost btn-ico plain" data-delrole="${esc(r.key)}" title="ลบบทบาท">${ic('trash', 16)}</button></div>`}</th>`).join('')}</tr></thead><tbody>
             <tr><td>ดู Dashboard / สินค้า / แจ้งเตือน</td>${d.roles.map(() => `<td class="perm-yes">${ic('check')}</td>`).join('')}</tr>
-            <tr><td>สาขาที่เข้าถึงได้</td>${d.roles.map((r) => `<td>${r.key === 'owner' ? esc(d.scopes.all) : `<select class="input" data-scope="${esc(r.key)}" style="min-width:140px"><option value="multi" ${r.scope === 'multi' ? 'selected' : ''}>${esc(d.scopes.multi)}</option><option value="single" ${r.scope === 'single' ? 'selected' : ''}>${esc(d.scopes.single)}</option></select>`}</td>`).join('')}</tr>
+            <tr><td>สาขาที่เข้าถึงได้</td>${d.roles.map((r) => `<td>${r.key === 'owner' ? esc(`ทุกสาขาของร้าน ${shopName}`) : scopeSelect(r)}</td>`).join('')}</tr>
             ${d.permissions.map((p) => `<tr><td>${esc(p.label)}</td>${d.roles.map((r) => `<td><input type="checkbox" data-perm="${esc(p.key)}" data-rk="${esc(r.key)}" ${r.perms.includes(p.key) ? 'checked' : ''} ${r.key === 'owner' ? 'disabled' : ''}></td>`).join('')}</tr>`).join('')}
             </tbody></table></div></div>
       </div>`,
@@ -1805,8 +1826,9 @@
         }));
         $$('[data-remove]', root).forEach((b) => b.addEventListener('click', async () => {
           const m = byId(b.dataset.remove);
-          const text = m.allBranches
+          const text = m.role === 'owner'
             ? `<b>${esc(m.name)}</b> เป็นเจ้าของร้าน จะถูกนำออกจาก<b>ทุกสาขา</b> (บัญชีและประวัติที่เคยบันทึกยังอยู่)`
+            : fixedScope(m.role) ? `<b>${esc(m.name)}</b> จะถูกนำออกจาก<b>ทุกสาขาของร้านนี้</b> เพราะสาขากำหนดที่บทบาท (บัญชีและประวัติที่เคยบันทึกยังอยู่)`
             : `<b>${esc(m.name)}</b> จะไม่สามารถเข้าดูข้อมูลของสาขานี้ได้อีก (บัญชีและประวัติที่เคยบันทึกยังอยู่)`;
           if (!await confirmBox('นำผู้ใช้ออก?', text, 'นำออก', true)) return;
           try { await DEL(`/api/members/${m.id}`); toast('นำผู้ใช้ออกแล้ว'); render(); } catch (e) { toast(e.message, 'err'); }
@@ -1865,6 +1887,7 @@
                 const shop = shopOf(shopSel.value);
                 const branch = storeSel.selectedOptions[0]?.textContent || '';
                 $('#iv-hint', dlg).textContent = !r ? '' : r.scope === 'all' ? `เห็นได้ทุกสาขาของร้าน ${shop.orgName}`
+                  : r.scope === 'stores' ? `เข้าถึงได้เฉพาะสาขาที่บทบาทนี้กำหนด: ${r.storeIds.map((id) => shop.stores.find((st) => st.id === id)?.name || `#${id}`).join(', ') || '(ยังไม่ได้เลือกสาขา)'}`
                   : r.scope === 'multi' ? 'เห็นและจัดการได้เฉพาะสาขาที่เลือกด้านล่าง'
                     : `เข้าถึงได้เฉพาะ ${shop.orgName} · ${branch} เท่านั้น`;
                 $('#iv-br', dlg).hidden = r?.scope !== 'multi' || shop.stores.length < 2;
@@ -1899,14 +1922,26 @@
           const ok = await modal({
             title: 'เพิ่มบทบาท',
             body: `<div class="field"><label for="rl-nm">ชื่อบทบาท *</label><input class="input" id="rl-nm" maxlength="40" placeholder="เช่น แคชเชียร์"></div>
-              <div class="field"><label for="rl-sc">สาขาที่เข้าถึงได้</label><select class="input" id="rl-sc"><option value="single">${esc(d.scopes.single)}</option><option value="multi">${esc(d.scopes.multi)}</option></select></div>
+              <div class="field"><label for="rl-sc">สาขาที่เข้าถึงได้</label><select class="input" id="rl-sc">
+                <option value="all">ทุกสาขาของร้าน ${esc(shopName)} (${d.stores.length} สาขา)</option>
+                <option value="stores">เฉพาะสาขาที่เลือก (ทุกคนในบทบาทนี้)</option>
+                <option value="multi">เลือกสาขาให้แต่ละคน — ได้หลายสาขา</option>
+                <option value="single" selected>เลือกสาขาให้แต่ละคน — คนละ 1 สาขา</option></select>
+                <div class="stack" id="rl-st" style="gap:4px;margin-top:6px" hidden>${d.stores.map((s) => `<label class="check"><input type="checkbox" name="rl-st" value="${s.id}" ${s.id === S.me.store.id ? 'checked' : ''}>${esc(s.name)}</label>`).join('')}</div></div>
               <div class="field"><label>สิทธิ์</label><div class="stack" style="gap:4px">${permBoxes()}</div></div>
               <div class="form-err" hidden></div>`,
-            actions: [{ label: 'ยกเลิก' }, { label: 'เพิ่มบทบาท', cls: 'btn-primary', onClick: (dlg) => POST('/api/roles', {
-              name: $('#rl-nm', dlg).value,
-              scope: $('#rl-sc', dlg).value,
-              perms: $$('input[type=checkbox]:checked', dlg).map((c) => c.value),
-            }) }],
+            onMount(dlg) { $('#rl-sc', dlg).addEventListener('change', (e) => { $('#rl-st', dlg).hidden = e.target.value !== 'stores'; }); },
+            actions: [{ label: 'ยกเลิก' }, { label: 'เพิ่มบทบาท', cls: 'btn-primary', onClick: (dlg) => {
+              const scope = $('#rl-sc', dlg).value;
+              const storeIds = $$('input[name=rl-st]:checked', dlg).map((c) => Number(c.value));
+              if (scope === 'stores' && !storeIds.length) throw new Error('กรุณาเลือกอย่างน้อย 1 สาขา');
+              return POST('/api/roles', {
+                name: $('#rl-nm', dlg).value,
+                scope,
+                storeIds: scope === 'stores' ? storeIds : undefined,
+                perms: $$('.stack:not(#rl-st) input[type=checkbox]:checked', dlg).map((c) => c.value),
+              });
+            } }],
           });
           if (ok) { toast('เพิ่มบทบาทแล้ว'); render(); }
         });
@@ -1925,7 +1960,20 @@
           try { await DEL(`/api/roles/${r.key}`); toast('ลบบทบาทแล้ว'); render(); } catch (e) { toast(e.message, 'err'); }
         }));
         $$('[data-scope]', root).forEach((s) => s.addEventListener('change', async () => {
-          try { await PUT(`/api/roles/${s.dataset.scope}`, { scope: s.value }); toast('บันทึกการเข้าถึงสาขาแล้ว'); render(); }
+          const r = roleBy(s.dataset.scope);
+          let body;
+          if (s.value.startsWith('store:')) body = { scope: 'stores', storeIds: [Number(s.value.slice(6))] };
+          else if (s.value === 'pick') {
+            const ids = await pickBranches(`สาขาที่${r.name}เข้าถึงได้`, r.scope === 'stores' ? r.storeIds : [S.me.store.id], `ทุกคนในบทบาท${esc(r.name)}จะเห็นและจัดการได้เฉพาะสาขาที่เลือก`);
+            if (!ids) return render();
+            body = { scope: 'stores', storeIds: ids };
+          } else body = { scope: s.value };
+          if (body.scope === 'stores' || body.scope === 'all') {
+            const where = body.scope === 'all' ? `ทุกสาขาของร้าน ${shopName}` : `สาขา ${body.storeIds.map(storeName).join(', ')}`;
+            const n = roleCount(r.key);
+            if (n && !await confirmBox('เปลี่ยนสาขาที่เข้าถึงได้?', `ผู้ใช้ ${n} คนในบทบาท<b>${esc(r.name)}</b> จะเข้าถึงได้<b>${esc(where)}</b> และจะถูกนำออกจากสาขาอื่น`, 'เปลี่ยน')) return render();
+          }
+          try { await PUT(`/api/roles/${r.key}`, body); toast('บันทึกการเข้าถึงสาขาแล้ว'); render(); }
           catch (e) { toast(e.message, 'err'); render(); }
         }));
         $$('[data-perm]', root).forEach((c) => c.addEventListener('change', async () => {
