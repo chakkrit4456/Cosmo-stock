@@ -434,27 +434,6 @@ api('POST', '/api/auth/login', { auth: false, store: false }, async (ctx) => {
   return { ok: true };
 });
 
-api('POST', '/api/auth/register', { auth: false, store: false }, async (ctx) => {
-  const b = ctx.body;
-  const shopName = text(b.shopName ?? b.storeName, { label: 'ชื่อร้าน', max: 60, required: true });
-  const branchName = text(b.branchName, { label: 'ชื่อสาขาแรก', max: 60 }) || DEFAULT_BRANCH;
-  const name = text(b.name, { label: 'ชื่อผู้ใช้', max: 80, required: true });
-  const email = emailVal(b.email);
-  const pass = passwordVal(b.password);
-  if (await get('SELECT 1 FROM users WHERE email = ?', email)) {
-    throw new HttpError(409, 'อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบ แล้วเพิ่มร้านใหม่จากหน้า "ตั้งค่า"');
-  }
-  const { userId, storeId } = await tx(async () => {
-    const at = nowIso();
-    const userId = await insert('INSERT INTO users(email, name, pass, created_at) VALUES (?, ?, ?, ?)', email, name, hashPassword(pass), at);
-    const storeId = await createStore(await createOrg(shopName, at), branchName, at);
-    await run('INSERT INTO members(store_id, user_id, role, created_at) VALUES (?, ?, ?, ?)', storeId, userId, 'owner', at);
-    return { userId, storeId };
-  });
-  await createSession(ctx.req, ctx.res, userId, storeId, true);
-  return { ok: true };
-});
-
 api('POST', '/api/auth/logout', { auth: false, store: false }, async (ctx) => {
   const token = parseCookies(ctx.req).cs_sid;
   if (token) await run('DELETE FROM sessions WHERE token = ?', hashToken(token));

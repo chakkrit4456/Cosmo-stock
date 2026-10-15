@@ -53,7 +53,7 @@
 ### ฟังก์ชันหลัก
 | ฟังก์ชัน | สถานะ |
 | --- | :-: |
-| Login / Logout / สมัครร้าน / จดจำฉัน | ✅ |
+| Login / Logout / จดจำฉัน (ไม่มีหน้าสมัคร — ร้านใหม่สร้างโดยผู้ดูแลระบบ) | ✅ |
 | ผู้ใช้และสิทธิ์ 4 บทบาท, เชิญ, เปลี่ยนบทบาท, รีเซ็ตรหัสผ่าน, นำออก | ✅ |
 | แยกข้อมูลแต่ละร้าน + หลายสาขาในธุรกิจเดียว | ✅ |
 | Dashboard (KPI, กราฟ 6 เดือน, แจ้งเตือน, ล่าสุด, มูลค่าตามหมวด) | ✅ |
@@ -252,7 +252,7 @@ orgs (ธุรกิจ) 1 ── * stores (ร้าน/สาขา) 1 ──
   3. ไม่มีแถว → ไม่มีสิทธิ์ (403)
 - **รายการสาขาที่เห็น** (`memberships`): ทุกสาขาใน org ที่ตนเป็น owner + สาขาที่เป็นสมาชิกโดยตรง
 - **ร้านที่เลือกอยู่** เก็บใน `sessions.store_id` เปลี่ยนด้วย `POST /api/me/store`
-- **สมัครร้าน** สร้าง `org` ใหม่ + `store` + `member(owner)`
+- **สร้างร้าน** (ผู้ดูแลระบบ `POST /api/sys/orgs` หรือเจ้าของร้าน `POST /api/stores` kind=shop) สร้าง `org` ใหม่ + `store` + `member(owner)` — ไม่มี API สมัครสาธารณะแล้ว
 - **เพิ่มสาขา** (`POST /api/stores`): owner สร้างสาขาใหม่ใน org เดิม หรือถ้าผู้ใช้ไม่มีร้านเลย จะสร้าง org ใหม่ให้
 - **ชื่อ org** ได้จากชื่อร้านส่วนก่อน `" · "` เช่น `Rose Beauty · สาขาสยาม` จะได้ org ชื่อ `Rose Beauty`
 - **SKU/บาร์โค้ด unique ต่อสาขา** ร้านอื่นหรือสาขาอื่นใช้ซ้ำได้ และการแสดงยอดข้ามสาขาตอนสแกนก็ match กันด้วย SKU
@@ -646,7 +646,7 @@ UPDATE products SET deleted_at = NULL WHERE store_id = 1 AND sku = 'MU-LP01';
 
 ### 15.6 เริ่มใช้งานจริงโดยไม่ใช้ข้อมูลตัวอย่าง
 ทางเลือกที่ 1: ลบโฟลเดอร์ `data/` → แก้ `seed()` ให้สร้างแค่บัญชีแอดมิน (หรือ `return false` แล้วให้ผู้ใช้สมัครร้านเอง) → เริ่มเซิร์ฟเวอร์
-ทางเลือกที่ 2: สมัครร้านใหม่จากหน้าเว็บ แล้วลบร้านตัวอย่างด้วย SQL (cascade จะลบ products, lots, members ให้ แต่ movements อ้าง products ด้วย FK ไม่มี cascade จึงต้องลบเองก่อน):
+ทางเลือกที่ 2: ให้ผู้ดูแลระบบสร้างร้านจริงจากหน้า ผู้ดูแลระบบ แล้วลบร้านตัวอย่าง (ที่หน้าเดียวกัน หรือด้วย SQL) (cascade จะลบ products, lots, members ให้ แต่ movements อ้าง products ด้วย FK ไม่มี cascade จึงต้องลบเองก่อน):
 ```sql
 DELETE FROM movements WHERE store_id IN (SELECT id FROM stores WHERE name LIKE 'Rose Beauty%');
 DELETE FROM counters  WHERE store_id IN (SELECT id FROM stores WHERE name LIKE 'Rose Beauty%');

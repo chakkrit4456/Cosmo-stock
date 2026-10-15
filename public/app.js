@@ -383,7 +383,6 @@
 
   const ROUTES = [
     ['/login', viewLogin, { public: true }],
-    ['/register', viewRegister, { public: true }],
     ['/', viewDashboard, { nav: 'dash' }],
     ['/products', viewProducts, { nav: 'products' }],
     ['/products/new', viewProductForm, { nav: 'products', perm: 'product.edit' }],
@@ -562,17 +561,59 @@
       ${g.list.map((s) => `<button type="button" class="store-opt ${s.id === current ? 'on' : ''}" ${attr}="${s.id}">${ic('store', 20)}<span class="nm">${esc(s.name)}<div class="small muted">${esc(head ? s.roleLabel : `${s.orgName || ''} · ${s.roleLabel}`)}</div></span>${tail(s)}</button>`).join('')}`).join('');
   }
 
+  // เพิ่มสาขาภายใต้ร้านเดิม (เจ้าของร้านขึ้นไป)
+  async function addBranchDialog(orgId, orgName) {
+    const me = await modal({
+      title: `เพิ่มสาขาในร้าน ${orgName}`,
+      body: `<div class="dialog-body">สาขาใหม่จะอยู่ภายใต้ร้าน <b>${esc(orgName)}</b> ใช้ชื่อร้านเดิม แต่สินค้าและสต็อกแยกจากสาขาอื่น</div>
+        <div class="field"><label for="ab-nm">ชื่อสาขา *</label><input class="input" id="ab-nm" maxlength="60" placeholder="เช่น สาขาอารีย์" autocomplete="off"></div>
+        <div class="form-err" hidden></div>`,
+      onMount(dlg) { setTimeout(() => $('#ab-nm', dlg)?.focus(), 50); },
+      actions: [{ label: 'ยกเลิก' }, { label: ic('plus') + 'เพิ่มสาขา', cls: 'btn-primary', onClick: (dlg) => POST('/api/stores', { kind: 'branch', name: $('#ab-nm', dlg).value, orgId }) }],
+    });
+    if (!me) return;
+    S.me = me;
+    S.shellKey = '';
+    toast(`เพิ่มสาขา ${storeLabel(S.me.store)} แล้ว`);
+    go('/');
+  }
+
+  // สร้างร้านใหม่ทั้งร้าน (ธุรกิจใหม่ ข้อมูลแยกจากร้านเดิมทั้งหมด)
+  async function newShopDialog() {
+    const me = await modal({
+      title: 'สร้างร้านใหม่',
+      body: `<div class="dialog-body">ร้านใหม่คือ<b>ธุรกิจใหม่</b> ข้อมูลทั้งหมดแยกจากร้านเดิม คุณจะเป็นเจ้าของร้าน — ถ้าต้องการเพิ่มที่ตั้งใหม่ของร้านเดิม ให้ใช้ <b>เพิ่มสาขา</b> แทน</div>
+        <div class="field"><label for="ns-nm">ชื่อร้าน *</label><input class="input" id="ns-nm" maxlength="60" placeholder="เช่น Lily Cosmetics" autocomplete="off"></div>
+        <div class="field"><label for="ns-br">ชื่อสาขาแรก</label><input class="input" id="ns-br" maxlength="60" placeholder="เว้นว่าง = สาขาหลัก" autocomplete="off"></div>
+        <div class="form-err" hidden></div>`,
+      onMount(dlg) { setTimeout(() => $('#ns-nm', dlg)?.focus(), 50); },
+      actions: [{ label: 'ยกเลิก' }, { label: ic('store') + 'สร้างร้านใหม่', cls: 'btn-secondary', onClick: (dlg) => POST('/api/stores', { kind: 'shop', shopName: $('#ns-nm', dlg).value, name: $('#ns-br', dlg).value }) }],
+    });
+    if (!me) return;
+    S.me = me;
+    S.shellKey = '';
+    toast(`สร้างร้าน ${S.me.store.orgName} แล้ว`);
+    go('/');
+  }
+
+  const canNewShop = () => !S.me.user.superadmin && S.me.stores.some((s) => s.role === 'owner');
+
   async function switchStore() {
     const { stores, store } = S.me;
     const id = await modal({
       title: 'เลือกร้านที่ต้องการจัดการ',
       body: `<div class="stack" style="gap:8px">${storeOptions(stores, store.id, 'data-id', (s) => (s.id === store.id ? ic('check') : ''))}</div>
-        <a href="#/settings" class="small" data-new>＋ เพิ่มร้าน / สาขาใหม่</a>`,
+        ${store.canManageBranches || canNewShop() ? `<div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--color-divider);padding-top:12px">
+          ${store.canManageBranches ? `<button type="button" class="btn btn-primary" data-addbr style="flex:1 1 160px">${ic('plus')}เพิ่มสาขาใน ${esc(store.orgName)}</button>` : ''}
+          ${canNewShop() ? `<button type="button" class="btn btn-secondary" data-newshop style="flex:1 1 160px">${ic('store')}สร้างร้านใหม่</button>` : ''}</div>` : ''}`,
       onMount(dlg, close) {
         $$('[data-id]', dlg).forEach((b) => b.addEventListener('click', () => close(Number(b.dataset.id))));
-        $('[data-new]', dlg).addEventListener('click', () => close(null));
+        $('[data-addbr]', dlg)?.addEventListener('click', () => close('addbr'));
+        $('[data-newshop]', dlg)?.addEventListener('click', () => close('newshop'));
       },
     });
+    if (id === 'addbr') return addBranchDialog(store.orgId, store.orgName);
+    if (id === 'newshop') return newShopDialog();
     if (!id || id === store.id) return;
     try {
       S.me = await POST('/api/me/store', { storeId: id });
@@ -696,7 +737,6 @@
     </div>`;
   }
 
-  const authTabs = (on) => `<div class="seg"><a class="seg-opt ${on === 'login' ? 'on' : ''}" href="#/login">เข้าสู่ระบบ</a><a class="seg-opt ${on === 'register' ? 'on' : ''}" href="#/register">สมัครร้านใหม่</a></div>`;
 
   const pwField = (id, name, label, auto) => `<div class="field"><label for="${id}">${label}</label>
     <div class="input-icon"><input class="input" id="${id}" name="${name}" type="password" required autocomplete="${auto}" style="padding-left:10px;padding-right:48px">
@@ -712,13 +752,13 @@
   async function viewLogin() {
     return {
       html: authLayout(`<form class="card blueprint auth-card" id="f" novalidate>${CORNERS}
-        ${authTabs('login')}
+        <div class="card-title" style="font-size:22px">เข้าสู่ระบบ</div>
         <div class="field"><label for="em">อีเมล</label><input class="input" id="em" name="email" type="email" inputmode="email" autocomplete="username" required autocapitalize="none" spellcheck="false"></div>
         ${pwField('pw', 'password', 'รหัสผ่าน', 'current-password')}
         <div class="pw-row"><label class="check"><input type="checkbox" name="remember" checked>จดจำฉัน</label><a href="#" data-forgot style="padding:12px 0">ลืมรหัสผ่าน?</a></div>
         <div class="form-err" hidden></div>
         <button class="btn btn-primary blueprint" type="submit" style="min-height:50px;font-size:17px;width:100%">${CORNERS}เข้าสู่ระบบ</button>
-        <div class="small muted">ถ้าบัญชีอยู่หลายร้าน เลือกร้านได้จากเมนูด้านบนหลังเข้าสู่ระบบ</div>
+        <div class="small muted">ถ้าบัญชีอยู่หลายร้าน เลือกร้านได้จากเมนูด้านบนหลังเข้าสู่ระบบ<br>ต้องการเปิดร้านใหม่ ติดต่อผู้ดูแลระบบเพื่อสร้างร้านและบัญชีเจ้าของร้าน</div>
       </form>`),
       mount(root) {
         bindEyes(root);
@@ -729,34 +769,6 @@
         onSubmit($('#f', root), async (d) => {
           await POST('/api/auth/login', { email: d.email, password: d.password, remember: !!d.remember });
           await loadMe();
-          go('/');
-        });
-      },
-    };
-  }
-
-  async function viewRegister() {
-    return {
-      html: authLayout(`<form class="card blueprint auth-card" id="f" novalidate>${CORNERS}
-        ${authTabs('register')}
-        <div class="field"><label for="sn">ชื่อร้าน *</label><input class="input" id="sn" name="shopName" required maxlength="60" placeholder="เช่น Rose Beauty"></div>
-        <div class="field"><label for="sb">ชื่อสาขาแรก</label><input class="input" id="sb" name="branchName" maxlength="60" placeholder="เช่น สาขาสยาม (เว้นว่าง = สาขาหลัก)">
-          <div class="hint">เพิ่มสาขาอื่นภายใต้ร้านนี้ได้ภายหลังที่หน้า ตั้งค่า</div></div>
-        <div class="field"><label for="nm">ชื่อของคุณ *</label><input class="input" id="nm" name="name" required maxlength="80" autocomplete="name"></div>
-        <div class="field"><label for="em">อีเมล *</label><input class="input" id="em" name="email" type="email" inputmode="email" autocomplete="email" required autocapitalize="none" spellcheck="false"></div>
-        ${pwField('pw', 'password', 'รหัสผ่าน * (อย่างน้อย 8 ตัวอักษร)', 'new-password')}
-        ${pwField('pw2', 'password2', 'ยืนยันรหัสผ่าน *', 'new-password')}
-        <div class="form-err" hidden></div>
-        <button class="btn btn-primary blueprint" type="submit" style="min-height:50px;font-size:17px;width:100%">${CORNERS}สร้างร้านและเข้าใช้งาน</button>
-        <div class="small muted">คุณจะเป็น "เจ้าของร้าน" และเชิญพนักงานเข้าร้านได้ภายหลัง ข้อมูลของแต่ละร้านแยกจากกัน</div>
-      </form>`),
-      mount(root) {
-        bindEyes(root);
-        onSubmit($('#f', root), async (d) => {
-          if (d.password !== d.password2) throw new Error('รหัสผ่านทั้งสองช่องไม่ตรงกัน');
-          await POST('/api/auth/register', d);
-          await loadMe();
-          toast('สร้างร้านเรียบร้อย ยินดีต้อนรับสู่ CosmoStock');
           go('/');
         });
       },
@@ -1929,6 +1941,7 @@
         <div class="grid-2e">
           ${d.orgs.map((o) => `<div class="card blueprint">${CORNERS}
             <div style="display:flex;align-items:center;gap:8px"><div class="card-title" style="flex:1;min-width:0">${ic('store', 20)} ${esc(o.name)}</div>
+              <button type="button" class="btn btn-secondary" data-addbr="${o.id}" title="เพิ่มสาขาในร้านนี้">${ic('plus')}เพิ่มสาขา</button>
               <button type="button" class="btn btn-ghost btn-ico plain" data-rename="${o.id}" title="เปลี่ยนชื่อร้าน">${ic('edit')}</button>
               <button type="button" class="btn btn-ghost btn-ico plain" data-delorg="${o.id}" title="ลบร้าน">${ic('trash')}</button></div>
             <div class="small muted">เจ้าของร้าน: ${o.owners.length ? o.owners.map((u) => esc(`${u.name} (${u.email})`)).join(', ') : '<b>ยังไม่มีเจ้าของ</b>'}</div>
@@ -1952,6 +1965,7 @@
         const org = (id) => d.orgs.find((o) => o.id === Number(id));
         const user = (id) => d.users.find((u) => u.id === Number(id));
         $$('[data-sw]', root).forEach((b) => b.addEventListener('click', () => { const id = Number(b.dataset.sw); if (id !== S.me.store?.id) switchTo(id); }));
+        $$('[data-addbr]', root).forEach((b) => b.addEventListener('click', () => { const o = org(b.dataset.addbr); addBranchDialog(o.id, o.name); }));
         $('#new-org', root).addEventListener('click', async () => {
           const res = await modal({
             title: 'สร้างร้านใหม่',
@@ -2068,11 +2082,8 @@
               ${b.id === store.id ? '<span class="tag tag-accent">กำลังใช้งาน</span>' : ''}
               <button type="button" class="btn btn-ghost btn-ico plain" data-delbr="${b.id}" title="ลบสาขา ${esc(b.name)}" aria-label="ลบสาขา ${esc(b.name)}" ${branches.length <= 1 ? 'disabled' : ''}>${ic('trash')}</button></div>`).join('')}</div>
             <div class="hint">เพิ่มหรือลบสาขาได้เฉพาะเจ้าของร้านขึ้นไป ร้านต้องมีอย่างน้อย 1 สาขา</div></div>
-          <form id="nf" class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px" novalidate>
-            <div class="field"><label for="n-nm">เพิ่มสาขาในร้าน ${esc(store.orgName)}</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" id="n-nm" name="name" maxlength="60" required placeholder="เช่น สาขาอารีย์" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('plus')}สร้างสาขา</button></div>
-              <div class="hint">เจ้าของร้านทุกคนของร้านนี้จะเห็นสาขาใหม่อัตโนมัติ</div></div>
-            <div class="form-err" hidden></div>
-          </form>
+          <div><button type="button" class="btn btn-primary" data-addbr>${ic('plus')}เพิ่มสาขา</button>
+            <div class="hint">สาขาใหม่อยู่ภายใต้ร้าน ${esc(store.orgName)} เจ้าของร้านทุกคนของร้านนี้จะเห็นอัตโนมัติ</div></div>
         </div>` : ''}
         ${imp ? '' : `<form class="card blueprint form-card" id="af" novalidate>${CORNERS}
           <div class="card-title">บัญชีของฉัน</div>
@@ -2092,12 +2103,8 @@
           <div class="card-title">ร้านและสาขาของฉัน (${stores.length})</div>
           <div class="stack" style="gap:8px">${storeOptions(stores, store.id, 'data-sw', (s) => (s.id === store.id ? '<span class="tag tag-accent">กำลังใช้งาน</span>' : `<span class="small">สลับ</span>${ic('right')}`))}</div>
           ${owner ? '' : '<div class="small muted">สาขาที่คุณเข้าถึงได้กำหนดโดยเจ้าของร้าน</div>'}
-          <form id="of" class="stack" style="gap:10px;border-top:1px solid var(--color-divider);padding-top:14px" novalidate ${canNewShop ? '' : 'hidden'}>
-            <div class="field"><label for="o-nm">สร้างร้านใหม่ (แยกข้อมูลจากร้านเดิมทั้งหมด คุณจะเป็นเจ้าของร้าน)</label>
-              <input class="input" id="o-nm" name="shopName" maxlength="60" placeholder="ชื่อร้าน เช่น Lily Cosmetics"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" name="name" maxlength="60" placeholder="ชื่อสาขาแรก (เว้นว่าง = สาขาหลัก)" aria-label="ชื่อสาขาแรก" style="flex:1 1 220px"><button type="submit" class="btn btn-secondary">${ic('store')}สร้างร้าน</button></div>
-            <div class="form-err" hidden></div>
-          </form>
+          ${canNewShop ? `<div style="border-top:1px solid var(--color-divider);padding-top:14px"><button type="button" class="btn btn-secondary" data-newshop>${ic('store')}สร้างร้านใหม่</button>
+            <div class="hint">ร้านใหม่ = ธุรกิจใหม่ ข้อมูลแยกจากร้านเดิมทั้งหมด (ถ้าเป็นที่ตั้งใหม่ของร้านเดิม ให้ใช้ เพิ่มสาขา)</div></div>` : ''}
         </div>
         <button type="button" class="btn btn-secondary" data-act="logout" style="min-height:50px;color:var(--color-accent-700);border-color:var(--color-accent-300)">${ic('logout', 20)}ออกจากระบบ</button>
       </div>`,
@@ -2116,12 +2123,8 @@
         });
         const rf = $('#rf', root);
         if (rf) onSubmit(rf, async (d) => { S.me = await PUT('/api/org', { name: d.name }); updateShellBits(); toast('บันทึกชื่อร้านแล้ว'); render(); });
-        const nf = $('#nf', root);
-        if (nf) onSubmit(nf, async (d) => {
-          S.me = await POST('/api/stores', { kind: 'branch', name: d.name, orgId: store.orgId });
-          toast(`สร้างสาขา ${storeLabel(S.me.store)} แล้ว`);
-          go('/');
-        });
+        $('[data-addbr]', root)?.addEventListener('click', () => addBranchDialog(store.orgId, store.orgName));
+        $('[data-newshop]', root)?.addEventListener('click', () => newShopDialog());
         $$('[data-delbr]', root).forEach((b) => b.addEventListener('click', async () => {
           const br = branches.find((x) => x.id === Number(b.dataset.delbr));
           const res = await modal({
@@ -2136,11 +2139,6 @@
           toast(`ลบสาขา ${br.name} แล้ว`);
           render();
         }));
-        onSubmit($('#of', root), async (d) => {
-          S.me = await POST('/api/stores', { kind: 'shop', shopName: d.shopName, name: d.name });
-          toast(`สร้างร้าน ${S.me.store.orgName} แล้ว`);
-          go('/');
-        });
         $$('[data-sw]', root).forEach((b) => b.addEventListener('click', async () => {
           const id = Number(b.dataset.sw);
           if (id === store.id) return;

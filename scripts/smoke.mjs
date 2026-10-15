@@ -81,6 +81,10 @@ await check('POST ที่ไม่มี header X-CS ถูกปฏิเส�
   expectStatus(await call('POST', '/api/auth/login', { body: { email: 'x@example.com', password: 'x' } }), 403);
 });
 
+await check('ไม่มี API สมัครร้านสาธารณะ (POST /api/auth/register → 404)', async () => {
+  expectStatus(await call('POST', '/api/auth/register', { body: { shopName: 'x', name: 'x', email: 'x@example.invalid', password: 'xxxxxxxx' }, headers: { 'x-cs': '1' } }), 404);
+});
+
 await check('ล็อกอินด้วยรหัสผิด ตอบ 401 (ฐานข้อมูลเชื่อมต่อได้)', async () => {
   const r = await call('POST', '/api/auth/login', { body: { email: 'smoke-test@example.invalid', password: 'wrong-password' }, headers: { 'x-cs': '1' } });
   expectStatus(r, 401);
