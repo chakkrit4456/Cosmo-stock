@@ -1061,11 +1061,13 @@ async function leaveOrg(userId, orgId) {
 
 api('GET', '/api/members', { perm: 'users' }, async (ctx) => {
   const me = ctx.session.user_id;
-  const owners = await orgOwners(ctx.orgId);
+  // ผู้ดูแลระบบ (superadmin) ไม่แสดงในรายชื่อของร้าน — แสดงเฉพาะเจ้าของร้านและพนักงานของร้าน
+  const sys = new Set((await all('SELECT id FROM users WHERE is_superadmin = 1')).map((u) => u.id));
+  const owners = (await orgOwners(ctx.orgId)).filter((o) => !sys.has(o.id));
   const ownerIds = new Set(owners.map((o) => o.id));
   const direct = (await all(`SELECT u.id, u.name, u.email, u.last_login, m.role, m.created_at
                       FROM members m JOIN users u ON u.id = m.user_id WHERE m.store_id = ? ORDER BY m.created_at`, ctx.storeId))
-    .filter((m) => !ownerIds.has(m.id));
+    .filter((m) => !ownerIds.has(m.id) && !sys.has(m.id));
   const out = async (m, role) => ({
     id: m.id, name: m.name, email: m.email, role, roleLabel: await roleName(ctx.orgId, role), lastLogin: m.last_login, joinedAt: m.created_at, isMe: m.id === me,
     scope: await roleScope(ctx.orgId, role),
@@ -1076,7 +1078,7 @@ api('GET', '/api/members', { perm: 'users' }, async (ctx) => {
   const here = new Set(direct.map((m) => m.id));
   const elsewhere = await pall((await all(`SELECT DISTINCT u.id, u.name, u.email, u.last_login, m.role, lower(u.name) AS sort_name FROM members m JOIN stores s ON s.id = m.store_id
                          JOIN users u ON u.id = m.user_id WHERE s.org_id = ? AND m.role <> 'owner' ORDER BY sort_name`, ctx.orgId))
-    .filter((m) => !here.has(m.id) && !ownerIds.has(m.id)), (m) => out(m, m.role));
+    .filter((m) => !here.has(m.id) && !ownerIds.has(m.id) && !sys.has(m.id)), (m) => out(m, m.role));
   return {
     members: [...await pall(owners, (o) => out(o, 'owner')), ...await pall(direct, (m) => out(m, m.role))],
     elsewhere,
