@@ -26,12 +26,13 @@ const PERM_LIST = [
   ['stock.adjust', 'ปรับยอดสต็อก'],
   ['report', 'ดูรายงาน / ส่งออก'],
   ['users', 'จัดการผู้ใช้และสิทธิ์'],
+  ['staff.edit', 'แก้ไขข้อมูลพนักงานในสาขา (ชื่อ อีเมล รูป รหัสผ่าน)'],
   ['settings', 'ตั้งค่าร้าน'],
 ];
 const PERM_KEYS = PERM_LIST.map(([k]) => k);
 const DEFAULT_ROLES = [
   { key: 'owner', name: 'เจ้าของร้าน', scope: 'all', sort: 0, perms: PERM_KEYS },
-  { key: 'manager', name: 'ผู้จัดการ', scope: 'multi', sort: 1, perms: ['product.edit', 'product.delete', 'stock.move', 'stock.adjust', 'report'] },
+  { key: 'manager', name: 'ผู้จัดการ', scope: 'multi', sort: 1, perms: ['product.edit', 'product.delete', 'stock.move', 'stock.adjust', 'report', 'staff.edit'] },
   { key: 'staff', name: 'พนักงานคลัง', scope: 'single', sort: 2, perms: ['stock.move'] },
   { key: 'viewer', name: 'ดูอย่างเดียว', scope: 'single', sort: 3, perms: ['report'] },
 ];
@@ -264,7 +265,7 @@ async function createSession(req, res, userId, storeId, remember, impersonatorId
 async function loadSession(req) {
   const token = parseCookies(req).cs_sid;
   if (!token || token.length > 100) return null;
-  const s = await get(`SELECT s.token, s.store_id, s.expires_at, s.impersonator_id, u.id AS user_id, u.name, u.email, u.is_superadmin,
+  const s = await get(`SELECT s.token, s.store_id, s.expires_at, s.impersonator_id, u.id AS user_id, u.name, u.email, u.avatar_at, u.is_superadmin,
                         i.name AS impersonator_name, i.email AS impersonator_email
                  FROM sessions s JOIN users u ON u.id = s.user_id LEFT JOIN users i ON i.id = s.impersonator_id
                  WHERE s.token = ?`, hashToken(token));
@@ -455,7 +456,7 @@ async function mePayload(ctx) {
   }
   if (store) store.canManageBranches = await canManageBranches(session.user_id, current.orgId);
   const impersonatedBy = session.impersonator_id ? { name: session.impersonator_name, email: session.impersonator_email } : null;
-  return { user: { id: session.user_id, name: session.name, email: session.email, superadmin: !!session.superadmin, impersonatedBy }, stores, store };
+  return { user: { id: session.user_id, name: session.name, email: session.email, avatarAt: session.avatar_at || null, superadmin: !!session.superadmin, impersonatedBy }, stores, store };
 }
 
 // — auth —
@@ -568,6 +569,37 @@ api('POST', '/api/auth/reset', { auth: false, store: false }, async (ctx) => {
   return { ok: true, email: user.email };
 });
 
+// — รูปโปรไฟล์ —
+
+// รับ data URL (jpeg/png/webp) ที่ย่อจากฝั่งเบราว์เซอร์แล้ว; null/'' = ลบรูป — คืนเวลาที่ตั้ง (หรือ null)
+async function setAvatar(userId, v) {
+  if (!v) {
+    await run('UPDATE users SET avatar = NULL, avatar_at = NULL WHERE id = ?', userId);
+    return null;
+  }
+  if (typeof v !== 'string' || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) throw new HttpError(400, 'ไฟล์รูปไม่ถูกต้อง');
+  if (v.length > 400_000) throw new HttpError(400, 'รูปมีขนาดใหญ่เกินไป');
+  const at = Date.now();
+  await run('UPDATE users SET avatar = ?, avatar_at = ? WHERE id = ?', v, at, userId);
+  return at;
+}
+
+// ดูรูปได้เมื่อเป็นตัวเอง ผู้ดูแลระบบ หรืออยู่ร้านเดียวกัน
+api('GET', '/api/users/:id/avatar', { store: false }, async (ctx) => {
+  const id = Number(ctx.params.id) || 0;
+  const me = ctx.session.user_id;
+  if (id !== me && !await isSuperadmin(me)) {
+    const shared = await get(`SELECT 1 FROM members a JOIN stores sa ON sa.id = a.store_id JOIN stores sb ON sb.org_id = sa.org_id
+                              JOIN members b ON b.store_id = sb.id WHERE a.user_id = ? AND b.user_id = ? LIMIT 1`, me, id);
+    if (!shared) throw new HttpError(404, 'ไม่มีรูปโปรไฟล์');
+  }
+  const row = await get('SELECT avatar FROM users WHERE id = ?', id);
+  const m = row?.avatar && /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(row.avatar);
+  if (!m) throw new HttpError(404, 'ไม่มีรูปโปรไฟล์');
+  ctx.res.writeHead(200, { 'Content-Type': m[1], 'Cache-Control': 'private, max-age=31536000, immutable' });
+  ctx.res.end(Buffer.from(m[2], 'base64'));
+});
+
 // — me —
 
 api('GET', '/api/me', { store: false }, async (ctx) => await mePayload(ctx));
@@ -594,9 +626,10 @@ api('POST', '/api/auth/impersonate/stop', { store: false }, async (ctx) => {
 
 api('PUT', '/api/me', { store: false }, async (ctx) => {
   if (ctx.session.impersonator_id) throw new HttpError(403, 'แก้ไขบัญชีไม่ได้ระหว่างสวมสิทธิ์ผู้ใช้');
-  const name = text(ctx.body.name, { label: 'ชื่อ', max: 80, required: true });
+  const name = text(ctx.body.name ?? ctx.session.name, { label: 'ชื่อ', max: 80, required: true });
   await run('UPDATE users SET name = ? WHERE id = ?', name, ctx.session.user_id);
   ctx.session.name = name;
+  if (ctx.body.avatar !== undefined) ctx.session.avatar_at = await setAvatar(ctx.session.user_id, ctx.body.avatar);
   return await mePayload(ctx);
 });
 
@@ -1033,7 +1066,7 @@ api('GET', '/api/reports', { perm: 'report' }, async (ctx) => {
 const orgStores = async (orgId) => await all('SELECT id, name FROM stores WHERE org_id = ? ORDER BY lower(name)', orgId);
 
 async function orgOwners(orgId) {
-  return await all(`SELECT u.id, u.name, u.email, u.last_login, MIN(m.created_at) AS created_at
+  return await all(`SELECT u.id, u.name, u.email, u.last_login, u.avatar_at, MIN(m.created_at) AS created_at
               FROM members m JOIN stores s ON s.id = m.store_id JOIN users u ON u.id = m.user_id
               WHERE s.org_id = ? AND m.role = 'owner' GROUP BY u.id ORDER BY created_at`, orgId);
 }
@@ -1086,27 +1119,36 @@ async function leaveOrg(userId, orgId) {
   await run('UPDATE sessions SET store_id = NULL WHERE user_id = ? AND store_id IN (SELECT id FROM stores WHERE org_id = ?)', userId, orgId);
 }
 
-api('GET', '/api/members', { perm: 'users' }, async (ctx) => {
+// ผู้มีสิทธิ์ "จัดการผู้ใช้" เห็นทั้งหมด / ผู้มีแค่ "แก้ไขข้อมูลพนักงาน" (เช่น ผู้จัดการ) เห็นและแก้ได้เฉพาะคนในสาขานี้
+const staffEditor = async (ctx) => {
+  const manage = await can(ctx.role, 'users', ctx.orgId);
+  if (!manage && !await can(ctx.role, 'staff.edit', ctx.orgId)) throw new HttpError(403, 'คุณไม่มีสิทธิ์ทำรายการนี้');
+  return manage;
+};
+
+api('GET', '/api/members', async (ctx) => {
+  const manage = await staffEditor(ctx);
   const me = ctx.session.user_id;
   // ผู้ดูแลระบบ (superadmin) ไม่แสดงในรายชื่อของร้าน — แสดงเฉพาะเจ้าของร้านและพนักงานของร้าน
   const sys = new Set((await all('SELECT id FROM users WHERE is_superadmin = 1')).map((u) => u.id));
   const owners = (await orgOwners(ctx.orgId)).filter((o) => !sys.has(o.id));
   const ownerIds = new Set(owners.map((o) => o.id));
-  const direct = (await all(`SELECT u.id, u.name, u.email, u.last_login, m.role, m.created_at
+  const direct = (await all(`SELECT u.id, u.name, u.email, u.last_login, u.avatar_at, m.role, m.created_at
                       FROM members m JOIN users u ON u.id = m.user_id WHERE m.store_id = ? ORDER BY m.created_at`, ctx.storeId))
     .filter((m) => !ownerIds.has(m.id) && !sys.has(m.id));
   const out = async (m, role) => ({
-    id: m.id, name: m.name, email: m.email, role, roleLabel: await roleName(ctx.orgId, role), lastLogin: m.last_login, joinedAt: m.created_at, isMe: m.id === me,
+    id: m.id, name: m.name, email: m.email, avatarAt: m.avatar_at || null, role, roleLabel: await roleName(ctx.orgId, role), lastLogin: m.last_login, joinedAt: m.created_at, isMe: m.id === me,
     scope: await roleScope(ctx.orgId, role),
     allBranches: await roleScope(ctx.orgId, role) === 'all',
     branches: await roleScope(ctx.orgId, role) === 'all' ? [] : (await orgMemberRows(m.id, ctx.orgId)).map((r) => ({ id: r.store_id, name: r.name })),
   });
   // สมาชิกของร้านเดียวกันที่อยู่สาขาอื่น (ไม่ใช่เจ้าของ) — ให้เจ้าของดึงมาสาขานี้ได้โดยไม่ต้องสลับสาขา
   const here = new Set(direct.map((m) => m.id));
-  const elsewhere = await pall((await all(`SELECT DISTINCT u.id, u.name, u.email, u.last_login, m.role, lower(u.name) AS sort_name FROM members m JOIN stores s ON s.id = m.store_id
+  const elsewhere = !manage ? [] : await pall((await all(`SELECT DISTINCT u.id, u.name, u.email, u.last_login, u.avatar_at, m.role, lower(u.name) AS sort_name FROM members m JOIN stores s ON s.id = m.store_id
                          JOIN users u ON u.id = m.user_id WHERE s.org_id = ? AND m.role <> 'owner' ORDER BY sort_name`, ctx.orgId))
     .filter((m) => !here.has(m.id) && !ownerIds.has(m.id) && !sys.has(m.id)), (m) => out(m, m.role));
   return {
+    manage,
     members: [...await pall(owners, (o) => out(o, 'owner')), ...await pall(direct, (m) => out(m, m.role))],
     elsewhere,
     stores: await orgStores(ctx.orgId),
@@ -1190,9 +1232,29 @@ const assertNotLastOwner = async (ctx) => {
   if ((await orgOwners(ctx.orgId)).length <= 1) throw new HttpError(400, 'ร้านต้องมีเจ้าของร้านอย่างน้อย 1 คน');
 };
 
-api('PUT', '/api/members/:userId', { perm: 'users' }, async (ctx) => {
+api('PUT', '/api/members/:userId', async (ctx) => {
+  const manage = await staffEditor(ctx);
   const m = await memberOf(ctx);
-  if (ctx.body.role !== undefined && ctx.body.role !== m.role) {
+  const b = ctx.body;
+  const callerIsSys = await isSuperadmin(ctx.session.user_id);
+  if (!callerIsSys && await isSuperadmin(m.userId)) throw new HttpError(403, 'แก้ไขบัญชีผู้ดูแลระบบไม่ได้');
+  if (!manage && (b.role !== undefined || m.role === 'owner')) throw new HttpError(403, 'แก้ไขบทบาทหรือข้อมูลเจ้าของร้านได้เฉพาะผู้ที่มีสิทธิ์จัดการผู้ใช้');
+  // บัญชีที่อยู่ร้านอื่นที่ผู้แก้ไม่ได้เป็นเจ้าของ: เปลี่ยนอีเมล/รหัสผ่านไม่ได้ (กันยึดบัญชีข้ามร้าน)
+  const foreign = async () => !callerIsSys && !!await get(`SELECT 1 FROM members t JOIN stores s ON s.id = t.store_id
+                         WHERE t.user_id = ? AND s.org_id <> ? AND s.org_id NOT IN (${OWNER_ORGS}) LIMIT 1`, m.userId, ctx.orgId, ctx.session.user_id);
+  const name = b.name !== undefined ? text(b.name, { label: 'ชื่อ-นามสกุล', max: 80, required: true }) : null;
+  const email = b.email !== undefined ? emailVal(b.email) : null;
+  if (email) {
+    const cur = (await get('SELECT email FROM users WHERE id = ?', m.userId)).email;
+    if (email !== cur) {
+      if (await foreign()) throw new HttpError(403, 'ผู้ใช้นี้เป็นสมาชิกร้านอื่นด้วย ให้เจ้าตัวหรือผู้ดูแลระบบเปลี่ยนอีเมล');
+      if (await get('SELECT 1 FROM users WHERE email = ? AND id <> ?', email, m.userId)) throw new HttpError(409, `อีเมล ${email} มีบัญชีอื่นใช้อยู่แล้ว`);
+      await run('UPDATE users SET email = ? WHERE id = ?', email, m.userId);
+    }
+  }
+  if (name) await run('UPDATE users SET name = ? WHERE id = ?', name, m.userId);
+  if (b.avatar !== undefined) await setAvatar(m.userId, b.avatar);
+  if (b.role !== undefined && b.role !== m.role) {
     const role = await roleVal(ctx.orgId, ctx.body.role);
     if (m.userId === ctx.session.user_id) throw new HttpError(400, 'เปลี่ยนบทบาทของตัวเองไม่ได้');
     await tx(async () => {
@@ -1219,14 +1281,10 @@ api('PUT', '/api/members/:userId', { perm: 'users' }, async (ctx) => {
       await upsertMember(ctx.storeId, m.userId, role);
     });
   }
-  if (ctx.body.password !== undefined) {
-    // Only reset a password when every business this person belongs to is owned by the caller,
-    // otherwise an owner of one shop could take over an account used in another shop.
-    const callerIsSys = await isSuperadmin(ctx.session.user_id);
-    if (await isSuperadmin(m.userId) && !callerIsSys) throw new HttpError(403, 'ไม่สามารถเปลี่ยนรหัสผ่านของผู้ดูแลระบบได้');
-    const foreign = !callerIsSys && await get(`SELECT 1 FROM members t JOIN stores s ON s.id = t.store_id
-                         WHERE t.user_id = ? AND s.org_id NOT IN (${OWNER_ORGS}) LIMIT 1`, m.userId, ctx.session.user_id);
-    if (foreign) throw new HttpError(403, 'ผู้ใช้นี้เป็นสมาชิกร้านอื่นด้วย ให้เจ้าตัวเปลี่ยนรหัสผ่านเองจากหน้าตั้งค่า');
+  if (b.password !== undefined && b.password !== '') {
+    // Only reset a password when the person is not also in a shop the caller doesn't own,
+    // otherwise someone in one shop could take over an account used in another shop.
+    if (await foreign()) throw new HttpError(403, 'ผู้ใช้นี้เป็นสมาชิกร้านอื่นด้วย ให้เจ้าตัวเปลี่ยนรหัสผ่านเองจากหน้าตั้งค่า');
     const pass = passwordVal(ctx.body.password, 'รหัสผ่านใหม่');
     await run('UPDATE users SET pass = ? WHERE id = ?', hashPassword(pass), m.userId);
     await run('DELETE FROM sessions WHERE user_id = ?', m.userId);
@@ -1781,6 +1839,12 @@ async function main() {
   await initSchema();
   await migrateBranches();
   for (const o of await all('SELECT id FROM orgs')) await seedOrgRoles(o.id);
+  // ครั้งเดียว: ให้บทบาทผู้จัดการของร้านเดิมได้สิทธิ์ "แก้ไขข้อมูลพนักงาน"
+  if (!await get("SELECT 1 FROM migrations WHERE name = 'perm-staff-edit'")) {
+    await run(`INSERT INTO org_role_perms(org_id, role_key, perm) SELECT org_id, key, 'staff.edit' FROM org_roles WHERE key = 'manager'
+               ON CONFLICT DO NOTHING`);
+    await run("INSERT INTO migrations(name, at) VALUES ('perm-staff-edit', ?) ON CONFLICT DO NOTHING", Date.now());
+  }
   const seeded = process.env.SEED_DEMO === '0' ? false : await seed();
   const superadmin = await ensureSuperadmin();
   const cleanSessions = () => run('DELETE FROM sessions WHERE expires_at < ?', Date.now()).catch((e) => console.error('ล้าง session ไม่สำเร็จ:', e.message));

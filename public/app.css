@@ -104,6 +104,7 @@ a.seg-opt { text-decoration: none; color: inherit; }
 .avatar { width: 36px; height: 36px; flex: none; border-radius: 50%; background: var(--color-accent-2-200); color: var(--color-accent-2-800);
   display: grid; place-items: center; font-weight: 600; font-size: 14px; }
 .avatar.lg { width: 48px; height: 48px; font-size: 18px; }
+.avatar.xl { width: 72px; height: 72px; font-size: 26px; }
 .who { flex: 1; min-width: 0; }
 .who .nm { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who .rl { font-size: 12px; color: var(--muted); }

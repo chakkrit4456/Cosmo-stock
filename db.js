@@ -184,6 +184,11 @@ CREATE TABLE IF NOT EXISTS org_role_stores (
   FOREIGN KEY (org_id, role_key) REFERENCES org_roles(org_id, key) ON DELETE CASCADE
 );
 -- รหัส OTP ลืมรหัสผ่าน (เก็บเฉพาะค่า hash)
+-- รูปโปรไฟล์ (data URL) และเวลาที่เปลี่ยน (ใช้ทำ cache-busting)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_at BIGINT;
+-- การย้ายข้อมูลที่ต้องทำครั้งเดียว
+CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, at BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS password_resets (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

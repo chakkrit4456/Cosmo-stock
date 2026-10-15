@@ -19,6 +19,33 @@
   const startOfDay = (s) => new Date(s + 'T00:00:00');
   const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
   const initial = (name) => (name || '?').trim().replace(/^[เแโใไ]/, '').charAt(0).toUpperCase() || '?';
+  // รูปโปรไฟล์ (ถ้ามี) หรืออักษรแรกของชื่อ
+  const avatarUrl = (id, at) => (at ? `/api/users/${id}/avatar?v=${at}` : '');
+  const avatarHtml = (id, name, at, cls = '') => (at
+    ? `<div class="avatar ${cls}" style="background:center/cover no-repeat url('${avatarUrl(id, at)}')" role="img" aria-label="${esc(name)}"></div>`
+    : `<div class="avatar ${cls}">${esc(initial(name))}</div>`);
+  // ปุ่มเลือก/ลบรูปโปรไฟล์ในฟอร์ม — onPick(dataUrl|null)
+  const avatarPicker = (id, name, at) => `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap" data-avp>
+      <span data-avp-img>${avatarHtml(id, name, at, 'xl')}</span>
+      <label class="btn btn-secondary" style="cursor:pointer">${ic('camera')}${at ? 'เปลี่ยนรูป' : 'เพิ่มรูปโปรไฟล์'}<input type="file" accept="image/*" data-avp-file hidden></label>
+      <button type="button" class="btn btn-ghost plain" data-avp-del ${at ? '' : 'hidden'}>${ic('trash')}ลบรูป</button></div>`;
+  function bindAvatarPicker(root, name, onPick) {
+    const box = $('[data-avp]', root);
+    if (!box) return;
+    const show = (url) => {
+      $('[data-avp-img]', box).innerHTML = url ? `<div class="avatar xl" style="background:center/cover no-repeat url('${url}')"></div>` : `<div class="avatar xl">${esc(initial(name))}</div>`;
+      $('[data-avp-del]', box).hidden = !url;
+    };
+    $('[data-avp-file]', box).addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      try { const url = await resizeImage(f, 320); if (await onPick(url) !== false) show(url); } catch (err) { toast(err.message, 'err'); }
+    });
+    $('[data-avp-del]', box).addEventListener('click', async () => {
+      try { if (await onPick(null) !== false) show(''); } catch (err) { toast(err.message, 'err'); }
+    });
+  }
   const abbr = (p) => ((p.sku.split('-')[1] || p.sku).replace(/[^A-Z]/g, '').slice(0, 2) || p.sku.slice(0, 2));
   const ic = (name, size) => `<cs-i name="${name}"${size ? ` size="${size}"` : ''}></cs-i>`;
   const CORNERS = ''; // เดิมเป็นเครื่องหมาย + ที่มุมกรอบ ตอนนี้ไม่ใช้แล้ว
@@ -392,7 +419,7 @@
     ['/history', viewHistory, { nav: 'history', agg: true }],
     ['/alerts', viewAlerts, { nav: 'alerts', agg: true }],
     ['/reports', viewReports, { nav: 'reports', perm: 'report' }],
-    ['/users', viewUsers, { nav: 'users', perm: 'users' }],
+    ['/users', viewUsers, { nav: 'users', perm: 'users|staff.edit' }],
     ['/system', viewSystem, { nav: 'system', sys: true }],
     ['/settings', viewSettings, { nav: 'settings' }],
     ['/more', viewMore, { nav: 'more' }],
@@ -445,7 +472,7 @@
     const navKey = typeof route.opts.nav === 'function' ? route.opts.nav(params) : route.opts.nav;
     $$('[data-nav]').forEach((a) => a.classList.toggle('on', a.dataset.nav === navKey || (navKey === 'more' && a.dataset.nav === 'more')));
     const view = $('#view');
-    if ((route.opts.perm && !can(route.opts.perm)) || (route.opts.sys && !S.me.user.superadmin)) { view.innerHTML = forbidden(); return; }
+    if ((route.opts.perm && !route.opts.perm.split('|').some(can)) || (route.opts.sys && !S.me.user.superadmin)) { view.innerHTML = forbidden(); return; }
     const loader = setTimeout(() => { if (seq === renderSeq) view.innerHTML = '<div class="page" aria-busy="true" aria-label="กำลังโหลด"><div class="sk sk-h"></div><div class="sk sk-kpis"></div><div class="sk sk-card"></div><div class="sk sk-card short"></div></div>'; }, 180);
     try {
       const out = await route.view({ params, query });
@@ -545,7 +572,7 @@
         <div class="nav-sec">บัญชีและร้าน</div>
         <nav class="nav">
           ${S.me.user.superadmin ? navLink({ nav: 'system', href: '#/system', icon: 'key', label: 'ผู้ดูแลระบบ' }) : ''}
-          ${can('users') ? navLink({ nav: 'users', href: '#/users', icon: 'users', label: 'ผู้ใช้และสิทธิ์' }) : ''}
+          ${can('users') || can('staff.edit') ? navLink({ nav: 'users', href: '#/users', icon: 'users', label: can('users') ? 'ผู้ใช้และสิทธิ์' : 'พนักงาน' }) : ''}
           ${navLink({ nav: 'settings', href: '#/settings', icon: 'settings', label: 'ตั้งค่า' })}
         </nav>
         <div class="side-user">
@@ -577,7 +604,10 @@
     $$('[data-bind=store]').forEach((e) => { e.textContent = vs === 'branch' ? storeLabel(store) : `ดูรวม · ${mvScopeLabel(vs)}`; });
     $$('[data-bind=user]').forEach((e) => { e.textContent = user.name; });
     $$('[data-bind=role]').forEach((e) => { e.textContent = user.superadmin ? 'ผู้ดูแลระบบ' : store.roleLabel; });
-    $$('[data-bind=initial]').forEach((e) => { e.textContent = initial(user.name); });
+    $$('[data-bind=initial]').forEach((e) => {
+      e.textContent = user.avatarAt ? '' : initial(user.name);
+      e.style.background = user.avatarAt ? `center/cover no-repeat url('${avatarUrl(user.id, user.avatarAt)}')` : '';
+    });
     $$('[data-bind=badge], [data-bind=badge-tag]').forEach((e) => { e.textContent = count > 99 ? '99+' : String(count); e.hidden = !count; });
   }
 
@@ -1844,6 +1874,7 @@
   async function viewUsers() {
     const d = await GET('/api/members');
     const roleBy = (k) => d.roles.find((r) => r.key === k);
+    const canEdit = (m) => !m.isMe && (d.manage || m.role !== 'owner');
     const roleOpts = (sel) => d.roles.map((r) => `<option value="${esc(r.key)}" ${r.key === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
     const multi = d.stores.length > 1;
     const shopName = S.me.store.orgName || S.me.store.name;
@@ -1887,38 +1918,68 @@
     return {
       html: `<div class="page">
         <div class="page-head">
-          <div class="ttl"><h2>ผู้ใช้และสิทธิ์</h2><div class="sub">${esc(S.me.store.orgName || S.me.store.name)} — กำหนดบทบาทและสิทธิ์ของร้านนี้ได้เอง เจ้าของร้านเห็นทุกสาขาเสมอ</div></div>
-          <div class="acts"><button type="button" class="btn btn-primary blueprint" id="invite">${CORNERS}${ic('userplus')}เชิญผู้ใช้</button></div>
+          <div class="ttl"><h2>${d.manage ? 'ผู้ใช้และสิทธิ์' : 'พนักงาน'}</h2><div class="sub">${d.manage ? `${esc(S.me.store.orgName || S.me.store.name)} — กำหนดบทบาทและสิทธิ์ของร้านนี้ได้เอง เจ้าของร้านเห็นทุกสาขาเสมอ` : `${esc(storeLabel(S.me.store))} — แก้ไขข้อมูลและรูปโปรไฟล์ของพนักงานในสาขานี้`}</div></div>
+          ${d.manage ? `<div class="acts"><button type="button" class="btn btn-primary blueprint" id="invite">${CORNERS}${ic('userplus')}เชิญผู้ใช้</button></div>` : ''}
         </div>
           <div class="card blueprint">${CORNERS}<div class="card-title">ผู้ที่เข้าถึงสาขานี้ (${d.members.length})</div>
             <table class="table rtable"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>สาขาที่เข้าถึง</th><th>เข้าใช้ล่าสุด</th><th></th></tr></thead><tbody>
             ${d.members.map((m) => `<tr>
-              <td class="lead" data-label=""><div class="pn"><div class="avatar">${esc(initial(m.name))}</div><div style="min-width:0"><div>${esc(m.name)}${m.isMe ? ' <span class="tag tag-accent">คุณ</span>' : ''}</div><div class="small muted" style="overflow-wrap:anywhere">${esc(m.email)}</div></div></div></td>
-              <td data-label="บทบาท"><select class="input" data-role="${m.id}" ${m.isMe ? 'disabled title="เปลี่ยนบทบาทของตัวเองไม่ได้"' : ''} style="min-width:140px">${roleOpts(m.role)}</select></td>
-              <td data-label="สาขา"><div class="branch-cell">${branchCell(m)}</div></td>
+              <td class="lead" data-label=""><div class="pn">${avatarHtml(m.id, m.name, m.avatarAt)}<div style="min-width:0"><div>${esc(m.name)}${m.isMe ? ' <span class="tag tag-accent">คุณ</span>' : ''}</div><div class="small muted" style="overflow-wrap:anywhere">${esc(m.email)}</div></div></div></td>
+              <td data-label="บทบาท">${d.manage ? `<select class="input" data-role="${m.id}" ${m.isMe ? 'disabled title="เปลี่ยนบทบาทของตัวเองไม่ได้"' : ''} style="min-width:140px">${roleOpts(m.role)}</select>` : esc(m.roleLabel)}</td>
+              <td data-label="สาขา"><div class="branch-cell">${d.manage ? branchCell(m) : `<span class="small">${m.allBranches ? 'ทุกสาขา' : m.branches.map((b) => esc(b.name)).join(', ')}</span>`}</div></td>
               <td data-label="เข้าใช้ล่าสุด" class="small">${m.lastLogin ? fmtDTY(m.lastLogin) : 'ยังไม่เคยเข้าใช้'}</td>
-              <td class="acts" data-label="">${m.isMe ? '' : `<button type="button" class="btn btn-ghost btn-ico plain" data-reset="${m.id}" title="ตั้งรหัสผ่านใหม่">${ic('key')}</button><button type="button" class="btn btn-ghost btn-ico plain" data-remove="${m.id}" title="${m.allBranches || fixedScope(m.role) ? 'นำออกจากทุกสาขา' : 'นำออกจากสาขานี้'}">${ic('trash')}</button>`}</td>
+              <td class="acts" data-label="">${m.isMe ? `<a class="btn btn-ghost btn-ico plain" href="#/settings" title="แก้ไขข้อมูลของฉัน">${ic('edit')}</a>` : canEdit(m) ? `<button type="button" class="btn btn-ghost btn-ico plain" data-edit="${m.id}" title="แก้ไขข้อมูลพนักงาน">${ic('edit')}</button>${d.manage ? `<button type="button" class="btn btn-ghost btn-ico plain" data-remove="${m.id}" title="${m.allBranches || fixedScope(m.role) ? 'นำออกจากทุกสาขา' : 'นำออกจากสาขานี้'}">${ic('trash')}</button>` : ''}` : ''}</td>
             </tr>`).join('')}</tbody></table></div>
           ${d.elsewhere?.length ? `<div class="card blueprint">${CORNERS}<div class="card-title">พนักงานสาขาอื่น (${d.elsewhere.length})</div>
             <div class="small muted">คนที่ทำงานอยู่สาขาอื่นของร้านนี้ — กด "ดึงมาสาขานี้" หรือ "ย้ายสาขา" เพื่อกำหนดสาขาให้ใหม่</div>
             <table class="table rtable"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>สาขาปัจจุบัน</th><th></th></tr></thead><tbody>
             ${d.elsewhere.map((m) => `<tr>
-              <td class="lead" data-label=""><div class="pn"><div class="avatar">${esc(initial(m.name))}</div><div style="min-width:0"><div>${esc(m.name)}</div><div class="small muted" style="overflow-wrap:anywhere">${esc(m.email)}</div></div></div></td>
+              <td class="lead" data-label=""><div class="pn">${avatarHtml(m.id, m.name, m.avatarAt)}<div style="min-width:0"><div>${esc(m.name)}</div><div class="small muted" style="overflow-wrap:anywhere">${esc(m.email)}</div></div></div></td>
               <td data-label="บทบาท">${esc(m.roleLabel)}</td>
               <td data-label="สาขา" class="small">${m.branches.map((b) => esc(b.name)).join(', ')}</td>
               <td class="acts" data-label="">${fixedScope(m.role) ? '<span class="small muted">สาขากำหนดที่บทบาท</span>' : `<button type="button" class="btn btn-secondary" data-pull="${m.id}">${ic('store', 16)}${roleBy(m.role)?.scope === 'single' ? 'ย้ายมาสาขานี้' : 'เพิ่มสาขานี้'}</button><button type="button" class="btn btn-ghost plain small" data-branches="${m.id}">กำหนดสาขา</button>`}</td>
             </tr>`).join('')}</tbody></table></div>` : ''}
-          <div class="card blueprint">${CORNERS}
+          ${d.manage ? `<div class="card blueprint">${CORNERS}
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="card-title" style="flex:1">บทบาทและสิทธิ์</div><button type="button" class="btn btn-secondary" id="add-role">${ic('plus')}เพิ่มบทบาท</button></div>
             <div class="small muted">ติ๊กเพื่อกำหนดว่าบทบาทนั้นทำอะไรได้ เจ้าของร้านมีสิทธิ์ครบและลบไม่ได้ — "สาขาที่เข้าถึงได้" เลือกได้ทั้งร้าน, ระบุสาขา (ทุกคนในบทบาทได้สาขาเดียวกัน) หรือเลือกสาขาให้แต่ละคนที่รายชื่อผู้ใช้</div>
             <div class="table-wrap"><table class="table perm"><thead><tr><th>การใช้งาน</th>${d.roles.map((r) => `<th>${esc(r.name)}${r.key === 'owner' ? '' : `<div class="role-tools"><button type="button" class="btn btn-ghost btn-ico plain" data-rename="${esc(r.key)}" title="แก้ชื่อ">${ic('edit', 16)}</button><button type="button" class="btn btn-ghost btn-ico plain" data-delrole="${esc(r.key)}" title="ลบบทบาท">${ic('trash', 16)}</button></div>`}</th>`).join('')}</tr></thead><tbody>
             <tr><td>ดู Dashboard / สินค้า / แจ้งเตือน</td>${d.roles.map(() => `<td class="perm-yes">${ic('check')}</td>`).join('')}</tr>
             <tr><td>สาขาที่เข้าถึงได้</td>${d.roles.map((r) => `<td>${r.key === 'owner' ? esc(`ทุกสาขาของร้าน ${shopName}`) : scopeSelect(r)}</td>`).join('')}</tr>
             ${d.permissions.map((p) => `<tr><td>${esc(p.label)}</td>${d.roles.map((r) => `<td><input type="checkbox" data-perm="${esc(p.key)}" data-rk="${esc(r.key)}" ${r.perms.includes(p.key) ? 'checked' : ''} ${r.key === 'owner' ? 'disabled' : ''}></td>`).join('')}</tr>`).join('')}
-            </tbody></table></div></div>
+            </tbody></table></div></div>` : ''}
       </div>`,
       mount(root) {
         const byId = (id) => d.members.find((m) => m.id === Number(id)) || d.elsewhere?.find((m) => m.id === Number(id));
+        // แก้ไขข้อมูลพนักงาน: รูปโปรไฟล์ ชื่อ อีเมล รหัสผ่านใหม่
+        $$('[data-edit]', root).forEach((b) => b.addEventListener('click', async () => {
+          const m = byId(b.dataset.edit);
+          let avatar; // undefined = ไม่เปลี่ยน, null = ลบ, string = รูปใหม่
+          const res = await modal({
+            title: `แก้ไขข้อมูล ${m.name}`,
+            body: `<div class="field"><label>รูปโปรไฟล์</label>${avatarPicker(m.id, m.name, m.avatarAt)}</div>
+              <div class="field"><label for="ed-nm">ชื่อ-นามสกุล *</label><input class="input" id="ed-nm" maxlength="80" value="${esc(m.name)}"></div>
+              <div class="field"><label for="ed-em">อีเมล (ใช้เข้าสู่ระบบ) *</label><input class="input" id="ed-em" type="email" inputmode="email" autocapitalize="none" spellcheck="false" value="${esc(m.email)}"></div>
+              <div class="field"><label for="ed-pw">รหัสผ่านใหม่</label><div style="display:flex;gap:8px"><input class="input" id="ed-pw" autocomplete="new-password" placeholder="เว้นว่าง = ไม่เปลี่ยน" style="font-family:ui-monospace,monospace"><button type="button" class="btn btn-secondary" data-genpw>สุ่ม</button></div>
+                <div class="hint">อย่างน้อย 8 ตัวอักษร — ถ้าเปลี่ยน ผู้ใช้จะถูกออกจากระบบทุกอุปกรณ์</div></div>
+              <div class="form-err" hidden></div>`,
+            onMount(dlg) {
+              $('[data-genpw]', dlg).addEventListener('click', () => { $('#ed-pw', dlg).value = genPassword(); });
+              bindAvatarPicker(dlg, m.name, (url) => { avatar = url; });
+            },
+            actions: [{ label: 'ยกเลิก' }, { label: 'บันทึก', cls: 'btn-primary', onClick: async (dlg) => {
+              const body = { name: $('#ed-nm', dlg).value, email: $('#ed-em', dlg).value };
+              if (avatar !== undefined) body.avatar = avatar;
+              const pw = $('#ed-pw', dlg).value;
+              if (pw) body.password = pw;
+              await PUT(`/api/members/${m.id}`, body);
+              return { ...body, password: pw };
+            } }],
+          });
+          if (!res) return;
+          toast(`บันทึกข้อมูล ${res.name.trim()} แล้ว`);
+          if (res.password) await showCredentials('ตั้งรหัสผ่านใหม่แล้ว', res.email.trim().toLowerCase(), res.password);
+          render();
+        }));
         $$('[data-role]', root).forEach((s) => s.addEventListener('change', async () => {
           const m = byId(s.dataset.role);
           const warn = s.value === 'owner'
@@ -1975,7 +2036,7 @@
           });
           if (pw) showCredentials('ตั้งรหัสผ่านใหม่แล้ว', m.email, pw);
         }));
-        $('#invite', root).addEventListener('click', async () => {
+        $('#invite', root)?.addEventListener('click', async () => {
           // ร้าน/สาขาที่เชิญได้ (dropdown) — ค่าเริ่มต้นคือสาขาที่ใช้งานอยู่
           let shops;
           try { shops = (await GET('/api/invite-targets')).shops; } catch (e) { toast(e.message, 'err'); return; }
@@ -2044,7 +2105,7 @@
           render();
         });
         const permBoxes = (dlg) => d.permissions.map((p) => `<label class="check"><input type="checkbox" value="${esc(p.key)}">${esc(p.label)}</label>`).join('');
-        $('#add-role', root).addEventListener('click', async () => {
+        $('#add-role', root)?.addEventListener('click', async () => {
           // ร้าน/สาขาที่จัดการได้ทั้งหมด — สร้างบทบาทเดียวกันในหลายร้านได้
           let shops;
           try { shops = (await GET('/api/invite-targets')).shops; } catch (e) { toast(e.message, 'err'); return; }
@@ -2344,6 +2405,7 @@
         </div>` : ''}
         ${imp ? '' : `<form class="card blueprint form-card" id="af" novalidate>${CORNERS}
           <div class="card-title">บัญชีของฉัน</div>
+          <div class="field"><label>รูปโปรไฟล์</label>${avatarPicker(user.id, user.name, user.avatarAt)}</div>
           <div class="field"><label for="a-nm">ชื่อที่แสดง</label><input class="input" id="a-nm" name="name" value="${esc(user.name)}" maxlength="80" required></div>
           <div class="form-err" hidden></div>
           <div class="form-foot"><button type="submit" class="btn btn-secondary">บันทึกชื่อ</button></div>
@@ -2370,6 +2432,11 @@
         const sf = $('#sf', root);
         if (sf) onSubmit(sf, async (d) => { await PUT('/api/store', { name: d.name, expiryDays: Number(d.expiryDays) }); toast('บันทึกการตั้งค่าร้านแล้ว'); await refreshMe(); });
         const af = $('#af', root);
+        if (af) bindAvatarPicker(af, user.name, async (avatar) => {
+          S.me = await PUT('/api/me', { avatar });
+          updateShellBits();
+          toast(avatar ? 'บันทึกรูปโปรไฟล์แล้ว' : 'ลบรูปโปรไฟล์แล้ว');
+        });
         if (af) onSubmit(af, async (d) => { S.me = await PUT('/api/me', { name: d.name }); updateShellBits(); toast('บันทึกชื่อแล้ว'); });
         const pf = $('#pf', root);
         if (pf) onSubmit(pf, async (d, form) => {
@@ -2425,7 +2492,7 @@
         </div>
         <div class="menu-sec"><div class="h">บัญชีและร้าน</div>
           ${user.superadmin ? link('#/system', 'key', 'ผู้ดูแลระบบ · ทุกร้าน ทุกสาขา') : ''}
-          ${can('users') ? link('#/users', 'users', 'ผู้ใช้และสิทธิ์') : ''}
+          ${can('users') || can('staff.edit') ? link('#/users', 'users', can('users') ? 'ผู้ใช้และสิทธิ์' : 'พนักงาน') : ''}
           ${link('#/settings', 'settings', can('settings') ? 'ตั้งค่าร้าน · แจ้งเตือนหมดอายุ · รหัสผ่าน' : 'ตั้งค่าบัญชี · รหัสผ่าน')}
         </div>
         <button type="button" class="btn btn-secondary" data-act="logout" style="min-height:50px;font-size:16px;color:var(--color-accent-700);border-color:var(--color-accent-300)">${ic('logout', 20)}ออกจากระบบ</button>
