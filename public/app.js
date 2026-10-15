@@ -410,15 +410,15 @@
 
   const ROUTES = [
     ['/login', viewLogin, { public: true }],
-    ['/', viewDashboard, { nav: 'dash', agg: true }],
-    ['/products', viewProducts, { nav: 'products', agg: true }],
+    ['/', viewDashboard, { nav: 'dash' }],
+    ['/products', viewProducts, { nav: 'products' }],
     ['/products/new', viewProductForm, { nav: 'products', perm: 'product.edit' }],
     ['/products/:id', viewProduct, { nav: 'products' }],
     ['/products/:id/edit', viewProductForm, { nav: 'products', perm: 'product.edit' }],
     ['/move/:type', viewMove, { nav: (p) => 'move-' + p.type }],
-    ['/history', viewHistory, { nav: 'history', agg: true }],
-    ['/alerts', viewAlerts, { nav: 'alerts', agg: true }],
-    ['/reports', viewReports, { nav: 'reports', perm: 'report', agg: true }],
+    ['/history', viewHistory, { nav: 'history' }],
+    ['/alerts', viewAlerts, { nav: 'alerts' }],
+    ['/reports', viewReports, { nav: 'reports', perm: 'report' }],
     ['/users', viewUsers, { nav: 'users', perm: 'users|staff.edit' }],
     ['/system', viewSystem, { nav: 'system', sys: true }],
     ['/settings', viewSettings, { nav: 'settings' }],
@@ -478,10 +478,9 @@
       const out = await route.view({ params, query });
       clearTimeout(loader);
       if (seq !== renderSeq || !out) return;
-      view.innerHTML = (viewScope() !== 'branch' && route.opts.agg ? aggNotice() : '') + out.html;
+      view.innerHTML = out.html;
       window.scrollTo(0, 0);
       out.mount?.(view);
-      $('[data-agg-off]', view)?.addEventListener('click', () => setViewScope('branch'));
     } catch (e) {
       clearTimeout(loader);
       if (seq !== renderSeq) return;
@@ -520,8 +519,6 @@
     render();
   }
   const mvScopeLabel = (scope) => (scope === 'shop' ? `ทุกสาขาในร้าน ${S.me.store.orgName}` : scope === 'all' ? 'ทุกร้านที่ดูแล' : storeLabel(S.me.store));
-  const aggNotice = () => `<div class="imp-bar" role="status" style="margin:0 0 12px">${ic('store', 18)}<span>กำลังดูข้อมูลรวม: <b>${esc(mvScopeLabel(viewScope()))}</b></span>
-    <button type="button" class="btn btn-secondary" data-agg-off>ดูเฉพาะสาขานี้</button></div>`;
   // ค่า scope สำหรับส่งไป API ('' = สาขานี้)
   const scopeQ = () => (viewScope() === 'branch' ? '' : viewScope());
   // แถวของสาขาที่ใช้งานอยู่ (แก้ไข/รับ-จ่ายได้) — แถวสาขาอื่นในโหมดดูรวมดูได้อย่างเดียว
