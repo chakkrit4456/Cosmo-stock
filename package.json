@@ -9,7 +9,9 @@
     "reset": "node server.js --reset",
     "superadmin": "node server.js --reset-superadmin",
     "import-sqlite": "node --disable-warning=ExperimentalWarning scripts/import-sqlite.mjs",
-    "backup": "bash deploy/backup.sh"
+    "backup": "bash deploy/backup.sh",
+    "test": "node --test \"test/*.test.js\"",
+    "smoke": "node scripts/smoke.mjs"
   },
   "engines": {
     "node": ">=22.13"
