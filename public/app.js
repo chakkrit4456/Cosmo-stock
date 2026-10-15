@@ -632,8 +632,11 @@
         ${p.packs.length ? `<div class="chips" style="flex-wrap:wrap">${[...p.packs].reverse().map((k) => `<span class="chip ${mp?.id === k.id ? 'on' : ''}" style="pointer-events:none">1 ${esc(k.name)} = ${fmtN(k.perQty)} ${esc(p.unit)}</span>`).join('')}</div>` : ''}
         ${lots.length ? `<div><div class="sr-h">ล็อต / วันหมดอายุ</div><div class="sr-rows">${[...lots].sort((a, b) => (b.id === sl?.id) - (a.id === sl?.id)).slice(0, 3).map((l) => `<div class="sr-row" ${l.id === sl?.id ? 'style="font-weight:700"' : ''}><span>${esc(l.lotNo || 'ไม่ระบุล็อต')}</span>${lotTag(l)}<b class="num">${fmtN(l.qty)}</b></div>`).join('')}
           ${lots.length > 3 ? `<div class="small muted">และอีก ${lots.length - 3} ล็อต</div>` : ''}</div></div>` : ''}
-        ${multi ? `<div><div class="sr-h">สาขาอื่น</div>${branches.length
-          ? `<div class="sr-rows">${branches.map((b) => `<div class="sr-row"><span>${ic('store', 16)} ${esc(b.storeName)}</span>${stTag(b.status)}<b class="num">${fmtN(b.qty)} ${esc(b.unit)}</b></div>`).join('')}</div>`
+        ${multi ? `<div><div class="sr-h">สาขาอื่นในร้าน ${esc(S.me.store.orgName)}</div>${branches.length
+          ? `<div class="sr-rows">${branches.map((b) => `<div class="sr-row"><span>${ic('store', 16)} ${esc(b.storeName)}</span>${stTag(b.status)}<b class="num">${fmtN(b.qty)} ${esc(b.unit)}</b></div>
+            ${sl ? `<div class="sr-row sr-sub sr-hit"><span>ล็อต ${esc(sl.lotNo || '-')}${sl.expiry ? ` · ${fmtD(sl.expiry)}` : ''}</span><span></span><b class="num">${b.scannedLotQty ? `เหลือ ${fmtN(b.scannedLotQty)}` : 'ไม่มีล็อตนี้'}</b></div>` : ''}
+            ${(b.lots || []).slice(0, 3).map((l) => `<div class="sr-row sr-sub"><span>${esc(l.lotNo || 'ไม่ระบุล็อต')}</span>${lotTag(l)}<b class="num">${fmtN(l.qty)}</b></div>`).join('')}
+            ${(b.lots || []).length > 3 ? `<div class="sr-row sr-sub"><span class="muted">และอีก ${b.lots.length - 3} ล็อต</span></div>` : ''}`).join('')}</div>`
           : '<div class="small muted">สาขาอื่นยังไม่มีสินค้า SKU นี้</div>'}</div>` : ''}
         ${recent.length ? `<div><div class="sr-h">ความเคลื่อนไหวล่าสุด</div><div class="list">${recent.slice(0, 3).map(mvLi).join('')}</div></div>` : ''}
       </div>`,

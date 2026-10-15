@@ -642,7 +642,11 @@ api('GET', '/api/lookup', async (ctx) => {
       const o = await get(`SELECT ${PRODUCT_COLS} FROM products p WHERE p.store_id = ? AND p.deleted_at IS NULL AND p.sku = ? LIMIT 1`, s.id, p.sku);
       if (!o) return null;
       const out = productOut(o, (await storeRow(s.id)).expiry_days);
-      return { storeId: s.id, storeName: s.name, qty: out.qty, unit: out.unit, status: out.status, nextExpiry: out.nextExpiry };
+      // ล็อตของสาขานั้น (ดูอย่างเดียว) และยอดของล็อตที่สแกน ถ้าสแกน QR ล็อต
+      const scannedLotQty = lotScan
+        ? Number((await get('SELECT qty FROM lots WHERE product_id = ? AND lot_no = ? AND expiry IS NOT DISTINCT FROM ?', o.id, lotScan.lotNo, lotScan.expiry))?.qty ?? 0)
+        : null;
+      return { storeId: s.id, storeName: s.name, qty: out.qty, unit: out.unit, status: out.status, nextExpiry: out.nextExpiry, lots: await lotsOut(o.id), scannedLotQty };
     })).filter(Boolean);
   let scannedLot = null;
   if (lotScan) {
