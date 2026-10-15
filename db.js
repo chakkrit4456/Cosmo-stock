@@ -183,6 +183,21 @@ CREATE TABLE IF NOT EXISTS org_role_stores (
   PRIMARY KEY (org_id, role_key, store_id),
   FOREIGN KEY (org_id, role_key) REFERENCES org_roles(org_id, key) ON DELETE CASCADE
 );
+-- เบอร์โทร (รูปแบบ 66xxxxxxxxx) ใช้รับ OTP ตอนลืมรหัสผ่าน
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_phone ON users(phone) WHERE phone IS NOT NULL;
+-- รหัส OTP ลืมรหัสผ่าน (เก็บเฉพาะค่า hash)
+CREATE TABLE IF NOT EXISTS password_resets (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL,
+  code_hash TEXT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_resets_user ON password_resets(user_id, created_at);
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'org_roles_scope_check' AND pg_get_constraintdef(oid) LIKE '%stores%') THEN
     ALTER TABLE org_roles DROP CONSTRAINT IF EXISTS org_roles_scope_check;

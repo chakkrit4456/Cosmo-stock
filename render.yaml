@@ -21,5 +21,11 @@ services:
         generateValue: true
       - key: SUPERADMIN_PASSWORD   # รหัสผู้ดูแลระบบ (superadmin@cosmostock.app) — สุ่มให้
         generateValue: true
+      - key: BREVO_API_KEY         # ลืมรหัสผ่าน: API key จาก Brevo (SMTP & API → API keys)
+        sync: false
+      - key: MAIL_FROM             # อีเมลผู้ส่งที่ยืนยันใน Brevo แล้ว
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: CosmoStock
       # - key: SEED_DEMO           # ขึ้นระบบจริง: เปิดบรรทัดนี้เพื่อไม่สร้างข้อมูลตัวอย่าง
       #   value: "0"
